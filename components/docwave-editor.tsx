@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
+import type { Editor } from "@tiptap/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { RichTextEditor } from "@/components/rich-text-editor"
 import { useCollaboration } from "@/components/collaboration-provider"
 import { useComments } from "@/components/comments-provider"
 import { useDocuments } from "@/components/document-provider"
@@ -15,6 +15,7 @@ import { SearchDialog } from "@/components/search-dialog"
 import { TemplateGallery } from "@/components/template-gallery"
 import { MobileToolbar } from "@/components/mobile-toolbar"
 import { MobileDrawer } from "@/components/mobile-drawer"
+import { TiptapEditor } from "@/components/editor/tiptap-editor"
 import {
   Search,
   Share2,
@@ -44,21 +45,18 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-type EditorBlock = {
-  id: string
-  type:
-    | "paragraph"
-    | "heading1"
-    | "heading2"
-    | "heading3"
-    | "quote"
-    | "code"
-    | "bulletList"
-    | "numberedList"
-    | "checklist"
-    | "divider"
-  content: string
-  checked?: boolean
+function parseDocumentContent(rawContent?: string) {
+  if (!rawContent) return undefined
+  try {
+    const parsed = JSON.parse(rawContent)
+    if (parsed && typeof parsed === "object" && parsed.type === "doc") {
+      return parsed
+    }
+    return undefined
+  } catch {
+    // not JSON, fall through to return raw string
+  }
+  return rawContent
 }
 
 function DocWaveEditorContent() {
@@ -72,6 +70,12 @@ function DocWaveEditorContent() {
   const [lastSaved, setLastSaved] = useState(new Date())
   const [searchOpen, setSearchOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const [editorInstance, setEditorInstance] = useState<Editor | null>(null)
+
+  const resolvedInitialContent = useMemo(
+    () => parseDocumentContent(currentDocument?.content),
+    [currentDocument?.id, currentDocument?.content],
+  )
 
   useEffect(() => {
     const checkMobile = () => {
@@ -93,6 +97,7 @@ function DocWaveEditorContent() {
   useEffect(() => {
     if (currentDocument) {
       setDocumentTitle(currentDocument.title)
+      setLastSaved(new Date(currentDocument.modifiedAt))
     }
   }, [currentDocument])
 
@@ -108,21 +113,6 @@ function DocWaveEditorContent() {
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [])
 
-  const handleContentChange = (blocks: EditorBlock[]) => {
-    // Simulate auto-save behavior
-    setSyncStatus("saving")
-    setTimeout(() => {
-      setSyncStatus("saved")
-      setLastSaved(new Date())
-      if (currentDocument) {
-        updateDocument(currentDocument.id, {
-          content: JSON.stringify(blocks),
-          size: `${Math.round((JSON.stringify(blocks).length / 1024) * 10) / 10} KB`,
-        })
-      }
-    }, 500)
-  }
-
   const handleTitleChange = (newTitle: string) => {
     setDocumentTitle(newTitle)
     if (currentDocument) {
@@ -132,7 +122,46 @@ function DocWaveEditorContent() {
 
   const handleNewDocument = () => {
     createDocument("Untitled Document")
+    setSyncStatus("saved")
   }
+
+  const handleEditorSave = useCallback(
+    async (json: unknown) => {
+      if (!currentDocument) return
+      const stringified = JSON.stringify(json)
+      updateDocument(currentDocument.id, {
+        content: stringified,
+        size: `${Math.round((stringified.length / 1024) * 10) / 10} KB`,
+      })
+      setLastSaved(new Date())
+    },
+    [currentDocument, updateDocument],
+  )
+
+  const handleStatusChange = useCallback((status: "saved" | "saving" | "offline") => {
+    setSyncStatus(status)
+  }, [])
+
+  const handleInsertImage = useCallback(() => {
+    if (!editorInstance) return
+    const url = typeof window !== "undefined" ? window.prompt("Image URL") : null
+    if (!url) return
+    editorInstance.chain().focus().setImage({ src: url }).run()
+  }, [editorInstance])
+
+  const handleInsertTable = useCallback(() => {
+    editorInstance
+      ?.chain()
+      .focus()
+      .insertTable({
+        rows: 3,
+        cols: 3,
+        withHeaderRow: true,
+      })
+      .run()
+  }, [editorInstance])
+
+  const editor = editorInstance
 
   const getSyncStatusDisplay = () => {
     switch (syncStatus) {
@@ -155,6 +184,14 @@ function DocWaveEditorContent() {
   }
 
   const statusDisplay = getSyncStatusDisplay()
+
+  if (!currentDocument) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background text-muted-foreground">
+        No document selected
+      </div>
+    )
+  }
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -180,53 +217,117 @@ function DocWaveEditorContent() {
 
         {/* Center - Toolbar (hidden on mobile) */}
         <div className="hidden md:flex items-center gap-1 bg-muted rounded-lg p-1">
-          <Button variant="ghost" size="sm">
+          <Button variant="ghost" size="sm" disabled={!editor?.can().undo()} onClick={() => editor?.chain().focus().undo().run()}>
             <Undo className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm">
+          <Button variant="ghost" size="sm" disabled={!editor?.can().redo()} onClick={() => editor?.chain().focus().redo().run()}>
             <Redo className="h-4 w-4" />
           </Button>
           <div className="w-px h-6 bg-border mx-1" />
-          <Button variant="ghost" size="sm">
+          <Button
+            variant={editor?.isActive("bold") ? "default" : "ghost"}
+            size="sm"
+            disabled={!editor}
+            onClick={() => editor?.chain().focus().toggleBold().run()}
+            aria-pressed={!!editor?.isActive("bold")}
+          >
             <Bold className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm">
+          <Button
+            variant={editor?.isActive("italic") ? "default" : "ghost"}
+            size="sm"
+            disabled={!editor}
+            onClick={() => editor?.chain().focus().toggleItalic().run()}
+            aria-pressed={!!editor?.isActive("italic")}
+          >
             <Italic className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm">
+          <Button
+            variant={editor?.isActive("underline") ? "default" : "ghost"}
+            size="sm"
+            disabled={!editor}
+            onClick={() => editor?.chain().focus().toggleUnderline().run()}
+            aria-pressed={!!editor?.isActive("underline")}
+          >
             <Underline className="h-4 w-4" />
           </Button>
           <div className="w-px h-6 bg-border mx-1" />
-          <Button variant="ghost" size="sm">
+          <Button
+            variant={editor?.isActive({ textAlign: "left" }) ? "default" : "ghost"}
+            size="sm"
+            disabled={!editor}
+            onClick={() => editor?.chain().focus().setTextAlign("left").run()}
+            aria-pressed={!!editor?.isActive({ textAlign: "left" })}
+          >
             <AlignLeft className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm">
+          <Button
+            variant={editor?.isActive({ textAlign: "center" }) ? "default" : "ghost"}
+            size="sm"
+            disabled={!editor}
+            onClick={() => editor?.chain().focus().setTextAlign("center").run()}
+            aria-pressed={!!editor?.isActive({ textAlign: "center" })}
+          >
             <AlignCenter className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm">
+          <Button
+            variant={editor?.isActive({ textAlign: "right" }) ? "default" : "ghost"}
+            size="sm"
+            disabled={!editor}
+            onClick={() => editor?.chain().focus().setTextAlign("right").run()}
+            aria-pressed={!!editor?.isActive({ textAlign: "right" })}
+          >
             <AlignRight className="h-4 w-4" />
           </Button>
           <div className="w-px h-6 bg-border mx-1" />
-          <Button variant="ghost" size="sm">
+          <Button
+            variant={editor?.isActive("bulletList") ? "default" : "ghost"}
+            size="sm"
+            disabled={!editor}
+            onClick={() => editor?.chain().focus().toggleBulletList().run()}
+            aria-pressed={!!editor?.isActive("bulletList")}
+          >
             <List className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm">
+          <Button
+            variant={editor?.isActive("orderedList") ? "default" : "ghost"}
+            size="sm"
+            disabled={!editor}
+            onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+            aria-pressed={!!editor?.isActive("orderedList")}
+          >
             <ListOrdered className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm">
+          <Button
+            variant={editor?.isActive("taskList") ? "default" : "ghost"}
+            size="sm"
+            disabled={!editor}
+            onClick={() => editor?.chain().focus().toggleTaskList().run()}
+            aria-pressed={!!editor?.isActive("taskList")}
+          >
             <CheckSquare className="h-4 w-4" />
           </Button>
           <div className="w-px h-6 bg-border mx-1" />
-          <Button variant="ghost" size="sm">
+          <Button variant="ghost" size="sm" disabled={!editor} onClick={handleInsertImage}>
             <ImageIcon className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm">
+          <Button variant="ghost" size="sm" disabled={!editor} onClick={handleInsertTable}>
             <Table className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!editor}
+            onClick={() => editor?.chain().focus().insertContent(":) ").run()}
+          >
             <Smile className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!editor}
+            onClick={() => editor?.chain().focus().insertContent("@").run()}
+          >
             <AtSign className="h-4 w-4" />
           </Button>
         </div>
@@ -344,7 +445,15 @@ function DocWaveEditorContent() {
         <main className="flex-1 bg-card overflow-auto">
           <div className="max-w-4xl mx-auto p-4 md:p-8 pb-20 md:pb-8">
             <div className="bg-background min-h-[800px] rounded-lg shadow-sm border border-border p-4 md:p-8 touch-manipulation">
-              <RichTextEditor onContentChange={handleContentChange} />
+              {currentDocument && (
+                <TiptapEditor
+                  docId={currentDocument.id}
+                  initialContent={resolvedInitialContent}
+                  onSave={handleEditorSave}
+                  onStatusChange={handleStatusChange}
+                  onEditorReady={setEditorInstance}
+                />
+              )}
             </div>
           </div>
         </main>
@@ -381,7 +490,7 @@ function DocWaveEditorContent() {
         )}
       </div>
 
-      <MobileToolbar />
+      <MobileToolbar editor={editorInstance} />
 
       <SearchDialog isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
