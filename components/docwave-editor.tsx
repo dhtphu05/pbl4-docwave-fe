@@ -220,16 +220,16 @@ function DocWaveEditorContent() {
           <Button
             variant="ghost"
             size="sm"
-            disabled={!editor || editor.commands.undo() === false}
-            onClick={() => editor?.commands.undo()}
+            disabled={!editor?.commands?.undo}
+            onClick={() => editor?.commands?.undo?.()}
           >
             <Undo className="h-4 w-4" />
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            disabled={!editor || editor.commands.redo() === false}
-            onClick={() => editor?.commands.redo()}
+            disabled={!editor?.commands?.redo}
+            onClick={() => editor?.commands?.redo?.()}
           >
             <Redo className="h-4 w-4" />
           </Button>
