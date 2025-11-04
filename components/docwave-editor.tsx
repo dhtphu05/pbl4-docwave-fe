@@ -217,10 +217,20 @@ function DocWaveEditorContent() {
 
         {/* Center - Toolbar (hidden on mobile) */}
         <div className="hidden md:flex items-center gap-1 bg-muted rounded-lg p-1">
-          <Button variant="ghost" size="sm" disabled={!editor?.can().undo()} onClick={() => editor?.chain().focus().undo().run()}>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!editor || editor.commands.undo() === false}
+            onClick={() => editor?.commands.undo()}
+          >
             <Undo className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm" disabled={!editor?.can().redo()} onClick={() => editor?.chain().focus().redo().run()}>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!editor || editor.commands.redo() === false}
+            onClick={() => editor?.commands.redo()}
+          >
             <Redo className="h-4 w-4" />
           </Button>
           <div className="w-px h-6 bg-border mx-1" />
