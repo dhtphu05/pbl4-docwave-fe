@@ -1,10 +1,13 @@
-"use client"
+"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { Editor } from "@tiptap/react"
+import { useEffect, useCallback, useMemo, useState, useRef } from "react";
 import { BubbleMenu, EditorContent, useEditor } from "@tiptap/react"
+import { yUndoPlugin } from "y-prosemirror"
+import { WebsocketProvider } from "y-websocket"
 import StarterKit from "@tiptap/starter-kit"
 import Underline from "@tiptap/extension-underline"
+import Collaboration from "@tiptap/extension-collaboration"
+import CollaborationCursor from "@tiptap/extension-collaboration-cursor"
 import Link from "@tiptap/extension-link"
 import TextAlign from "@tiptap/extension-text-align"
 import Placeholder from "@tiptap/extension-placeholder"
@@ -23,103 +26,103 @@ import CharacterCount from "@tiptap/extension-character-count"
 import Dropcursor from "@tiptap/extension-dropcursor"
 import Gapcursor from "@tiptap/extension-gapcursor"
 import TextStyle from "@tiptap/extension-text-style"
-import { lowlight } from "@/lib/lowlight"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import { lowlight } from "@/lib/lowlight" // Đảm bảo đường dẫn này đúng
+import { cn } from "@/lib/utils" // Đảm bảo đường dẫn này đúng
+import { Button } from "@/components/ui/button" // Đảm bảo đường dẫn này đúng
 import { Bold, Italic, Underline as UnderlineIcon, Code, Link2 } from "lucide-react"
+import type { Editor } from "@tiptap/react"
+import { useCollaboration } from "@/components/collaboration-provider" // Đảm bảo đường dẫn này đúng
+import type { Doc } from "yjs"
 
-type SyncStatus = "saved" | "saving" | "offline"
-
-const DEFAULT_DOC = {
-  type: "doc",
-  content: [
-    {
-      type: "paragraph",
-      content: [{ type: "text", text: "" }],
-    },
-  ],
-}
 
 type Props = {
   docId: string
-  initialContent: unknown
-  onSave?: (json: unknown) => Promise<void> | void
-  onStatusChange?: (status: SyncStatus) => void
+  initialContent?: any
+  onSave?: (json: unknown) => void
+  onStatusChange?: (status: "saved" | "saving" | "offline") => void
   onEditorReady?: (editor: Editor | null) => void
   className?: string
 }
 
-function resolveInitialContent(initialContent: unknown) {
-  if (typeof initialContent === "string") {
-    const trimmed = initialContent.trim()
-    if (!trimmed) return DEFAULT_DOC
-    try {
-      const parsed = JSON.parse(trimmed)
-      if (parsed && typeof parsed === "object" && parsed.type === "doc") {
-        return parsed
-      }
-      return trimmed
-    } catch {
-      return trimmed
-    }
-  }
-
-  if (initialContent && typeof initialContent === "object") {
-    return initialContent
-  }
-
-  return DEFAULT_DOC
-}
-
-const SAVE_DELAY = 700
-
-const getIsOnline = () => {
-  if (typeof navigator === "undefined") return true
-  return navigator.onLine
-}
-
 export function TiptapEditor({ docId, initialContent, onSave, onStatusChange, onEditorReady, className }: Props) {
-  const [, setStatus] = useState<SyncStatus>("saved")
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const resolvedContent = useMemo(() => resolveInitialContent(initialContent), [initialContent])
+  const { currentUser: user } = useCollaboration()
+  const [collabState, setCollabState] = useState<{
+    ydoc: Doc
+    provider: WebsocketProvider
+    undoManager: any // Y.UndoManager
+  } | null>(null)
+  const saveTimeout = useRef<NodeJS.Timeout | null>(null)
+ 
+  useEffect(() => {
+    if (!user) {
+      setCollabState(null)
+      return
+    }
 
-  const broadcastStatus = useCallback(
-    (next: SyncStatus) => {
-      setStatus(next)
-      onStatusChange?.(next)
-    },
-    [onStatusChange],
-  )
+    let ydoc: Doc | null = null
+    let provider: WebsocketProvider | null = null
+    let cancelled = false
 
-  const scheduleSave = useCallback(
-    (editorInstance: Editor) => {
-      if (!onSave) return
-
-      if (saveTimer.current) {
-        clearTimeout(saveTimer.current)
+    ;(async () => {
+      const Y = await import("yjs")
+      if (cancelled) {
+        return
       }
 
-      broadcastStatus(getIsOnline() ? "saving" : "offline")
+      ydoc = new Y.Doc()
+      // Thay đổi "ws://localhost:3001" thành URL máy chủ websocket của bạn
+      provider = new WebsocketProvider("ws://localhost:3001", docId, ydoc)
 
-      saveTimer.current = setTimeout(async () => {
-        try {
-          await onSave(editorInstance.getJSON())
-          broadcastStatus(getIsOnline() ? "saved" : "offline")
-        } catch (error) {
-          console.error("Failed to save document", error)
-          broadcastStatus("offline")
+      // Tạo UndoManager cho Y.Doc
+      const undoManager = new Y.UndoManager(ydoc.getXmlFragment("prosemirror"))
+
+      provider.on("status", (event: { status: "connected" | "disconnected" | "connecting" }) => {
+        if (event.status === "connected") {
+          onStatusChange?.("saved")
+        } else {
+          onStatusChange?.("offline")
         }
-      }, SAVE_DELAY)
-    },
-    [broadcastStatus, onSave],
-  )
+      })
 
-  const editor = useEditor(
-    {
+      provider.awareness.setLocalStateField("user", user)
+
+      setCollabState({ ydoc, provider, undoManager })
+    })()
+
+    return () => {
+      cancelled = true
+      provider?.destroy()
+      ydoc?.destroy()
+      setCollabState(null)
+    }
+  }, [docId, user, onStatusChange])
+
+  // --- SỬA LỖI TẠI ĐÂY ---
+  const editorOptions = useMemo(() => {
+    // Luôn trả về một đối tượng cấu hình hợp lệ
+    return {
+      content: initialContent,
+      onUpdate: ({ editor }: { editor: Editor }) => {
+        if (onSave) {
+          onStatusChange?.("saving")
+          if (saveTimeout.current) {
+            clearTimeout(saveTimeout.current)
+          }
+          saveTimeout.current = setTimeout(() => {
+            onSave(editor.getJSON())
+          }, 1000) // Debounce save
+        }
+      },
       extensions: [
         StarterKit.configure({
-          codeBlock: false,
+          history: false, // Tắt history của StarterKit khi dùng Collaboration
+          dropcursor: false,
+          gapcursor: false,
         }),
+        // Thêm yUndoPlugin để kích hoạt undo/redo của Yjs
+        ...(collabState?.undoManager
+          ? [yUndoPlugin({ undoManager: collabState.undoManager })]
+          : []),
         TextStyle,
         Underline,
         Link.configure({
@@ -155,17 +158,26 @@ export function TiptapEditor({ docId, initialContent, onSave, onStatusChange, on
         CharacterCount,
         Dropcursor,
         Gapcursor,
+        // Chỉ thêm extension collaboration khi collabState đã sẵn sàng
+        ...(collabState?.ydoc && collabState?.provider
+          ? [
+              Collaboration.configure({ document: collabState.ydoc, field: docId }),
+              CollaborationCursor.configure({ provider: collabState.provider, user }),
+            ]
+          : []),
       ],
-      content: resolvedContent,
       editorProps: {
         attributes: {
-          class: "tiptap focus:outline-none min-h-[60vh] pb-16 selection:bg-primary/20",
+          class:
+            "tiptap focus:outline-none min-h-[60vh] pb-16 selection:bg-primary/20",
         },
       },
-      onUpdate: ({ editor }) => scheduleSave(editor),
-    },
-    [docId],
-  )
+      immediatelyRender: false,
+    }
+    // 'user' cũng là một dependency vì nó được dùng trong CollaborationCursor
+  }, [collabState, user, initialContent, onSave, onStatusChange]) // Thêm các props có thể thay đổi
+
+  const editor = useEditor(editorOptions, [docId]) // Chỉ tạo lại editor khi docId thay đổi
 
   useEffect(() => {
     if (!editor) return
@@ -174,33 +186,6 @@ export function TiptapEditor({ docId, initialContent, onSave, onStatusChange, on
       onEditorReady?.(null)
     }
   }, [editor, onEditorReady])
-
-  useEffect(() => {
-    const handleOnline = () => {
-      broadcastStatus("saved")
-    }
-    const handleOffline = () => {
-      broadcastStatus("offline")
-    }
-
-    window.addEventListener("online", handleOnline)
-    window.addEventListener("offline", handleOffline)
-
-    return () => {
-      window.removeEventListener("online", handleOnline)
-      window.removeEventListener("offline", handleOffline)
-    }
-  }, [broadcastStatus])
-
-  useEffect(() => {
-    return () => {
-      if (saveTimer.current) {
-        clearTimeout(saveTimer.current)
-      }
-    }
-  }, [])
-
-  const characterCount = editor?.storage.characterCount?.characters() ?? 0
 
   const handleSetLink = useCallback(() => {
     if (!editor) return
@@ -215,6 +200,13 @@ export function TiptapEditor({ docId, initialContent, onSave, onStatusChange, on
 
     editor.chain().focus().setLink({ href: url }).run()
   }, [editor])
+
+  // Trì hoãn render cho đến khi editor sẵn sàng
+  if (!editor) {
+    return null // Hoặc hiển thị một skeleton loading
+  }
+
+  const characterCount = editor?.storage.characterCount?.characters() ?? 0
 
   return (
     <div className={cn("relative", className)}>
