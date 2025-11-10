@@ -34,3 +34,7 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## TipTap collaboration troubleshooting
+
+If you see `TypeError: Cannot read properties of undefined (reading 'doc')` when loading the editor, make sure **all** TipTap packages use the same major version. Mixing `@tiptap/extension-collaboration@3.x` with the rest of the `2.x` ecosystem causes the Yjs plugin to receive an undefined fragment. Align the collaboration and collaboration cursor extensions to the `2.x` line (e.g. `^2.26.4`), reinstall dependencies (`pnpm install`), and restart the dev server. After the downgrade both extensions use `y-prosemirror`, so the runtime error disappears.

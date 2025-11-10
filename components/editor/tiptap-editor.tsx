@@ -1,8 +1,7 @@
 "use client";
-
 import { useEffect, useCallback, useMemo, useState, useRef } from "react";
 import { BubbleMenu, EditorContent, useEditor } from "@tiptap/react"
-import { yUndoPlugin } from "y-prosemirror"
+import { Extension } from "@tiptap/core"
 import { WebsocketProvider } from "y-websocket"
 import StarterKit from "@tiptap/starter-kit"
 import Underline from "@tiptap/extension-underline"
@@ -26,14 +25,16 @@ import CharacterCount from "@tiptap/extension-character-count"
 import Dropcursor from "@tiptap/extension-dropcursor"
 import Gapcursor from "@tiptap/extension-gapcursor"
 import TextStyle from "@tiptap/extension-text-style"
-import { lowlight } from "@/lib/lowlight" // Đảm bảo đường dẫn này đúng
-import { cn } from "@/lib/utils" // Đảm bảo đường dẫn này đúng
-import { Button } from "@/components/ui/button" // Đảm bảo đường dẫn này đúng
+import { lowlight } from "@/lib/lowlight"
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 import { Bold, Italic, Underline as UnderlineIcon, Code, Link2 } from "lucide-react"
 import type { Editor } from "@tiptap/react"
-import { useCollaboration } from "@/components/collaboration-provider" // Đảm bảo đường dẫn này đúng
+import { useCollaboration } from "@/components/collaboration-provider"
 import type { Doc } from "yjs"
 
+const Y_WEBSOCKET_URL = process.env.NEXT_PUBLIC_YWS_URL ?? "ws://localhost:3001"
+const COLLAB_FRAGMENT = "prosemirror"
 
 type Props = {
   docId: string
@@ -44,15 +45,22 @@ type Props = {
   className?: string
 }
 
-export function TiptapEditor({ docId, initialContent, onSave, onStatusChange, onEditorReady, className }: Props) {
+export function TiptapEditor({
+  docId,
+  initialContent,
+  onSave,
+  onStatusChange,
+  onEditorReady,
+  className
+}: Props) {
   const { currentUser: user } = useCollaboration()
   const [collabState, setCollabState] = useState<{
     ydoc: Doc
     provider: WebsocketProvider
-    undoManager: any // Y.UndoManager
+    undoManager: any
   } | null>(null)
   const saveTimeout = useRef<NodeJS.Timeout | null>(null)
- 
+
   useEffect(() => {
     if (!user) {
       setCollabState(null)
@@ -70,11 +78,9 @@ export function TiptapEditor({ docId, initialContent, onSave, onStatusChange, on
       }
 
       ydoc = new Y.Doc()
-      // Thay đổi "ws://localhost:3001" thành URL máy chủ websocket của bạn
-      provider = new WebsocketProvider("ws://localhost:3001", docId, ydoc)
+      provider = new WebsocketProvider(Y_WEBSOCKET_URL, docId, ydoc)
 
-      // Tạo UndoManager cho Y.Doc
-      const undoManager = new Y.UndoManager(ydoc.getXmlFragment("prosemirror"))
+      const undoManager = new Y.UndoManager(ydoc.getXmlFragment(COLLAB_FRAGMENT))
 
       provider.on("status", (event: { status: "connected" | "disconnected" | "connecting" }) => {
         if (event.status === "connected") {
@@ -97,9 +103,37 @@ export function TiptapEditor({ docId, initialContent, onSave, onStatusChange, on
     }
   }, [docId, user, onStatusChange])
 
-  // --- SỬA LỖI TẠI ĐÂY ---
   const editorOptions = useMemo(() => {
-    // Luôn trả về một đối tượng cấu hình hợp lệ
+    const undoExtension = collabState?.undoManager
+      ? Extension.create({
+          name: "yjs-undo",
+          addCommands() {
+            return {
+              undo:
+                () =>
+                () => {
+                  if (!collabState.undoManager) return false
+                  collabState.undoManager.undo()
+                  return true
+                },
+              redo:
+                () =>
+                () => {
+                  if (!collabState.undoManager) return false
+                  collabState.undoManager.redo()
+                  return true
+                },
+            }
+          },
+          addKeyboardShortcuts() {
+            return {
+              "Mod-z": () => this.editor.commands.undo(),
+              "Shift-Mod-z": () => this.editor.commands.redo(),
+            }
+          },
+        })
+      : null
+
     return {
       content: initialContent,
       onUpdate: ({ editor }: { editor: Editor }) => {
@@ -110,19 +144,17 @@ export function TiptapEditor({ docId, initialContent, onSave, onStatusChange, on
           }
           saveTimeout.current = setTimeout(() => {
             onSave(editor.getJSON())
-          }, 1000) // Debounce save
+            onStatusChange?.("saved")
+          }, 1000)
         }
       },
       extensions: [
         StarterKit.configure({
-          history: false, // Tắt history của StarterKit khi dùng Collaboration
+          history: false,
           dropcursor: false,
           gapcursor: false,
         }),
-        // Thêm yUndoPlugin để kích hoạt undo/redo của Yjs
-        ...(collabState?.undoManager
-          ? [yUndoPlugin({ undoManager: collabState.undoManager })]
-          : []),
+        ...(undoExtension ? [undoExtension] : []),
         TextStyle,
         Underline,
         Link.configure({
@@ -134,7 +166,7 @@ export function TiptapEditor({ docId, initialContent, onSave, onStatusChange, on
           types: ["heading", "paragraph"],
         }),
         Placeholder.configure({
-          placeholder: "Gõ “/” để chèn block…",
+          placeholder: "Gõ \"/\" để chèn block…",
         }),
         Color,
         Highlight,
@@ -158,26 +190,29 @@ export function TiptapEditor({ docId, initialContent, onSave, onStatusChange, on
         CharacterCount,
         Dropcursor,
         Gapcursor,
-        // Chỉ thêm extension collaboration khi collabState đã sẵn sàng
         ...(collabState?.ydoc && collabState?.provider
           ? [
-              Collaboration.configure({ document: collabState.ydoc, field: docId }),
-              CollaborationCursor.configure({ provider: collabState.provider, user }),
+              Collaboration.configure({
+                document: collabState.ydoc,
+                field: COLLAB_FRAGMENT,
+              }),
+              CollaborationCursor.configure({
+                provider: collabState.provider,
+                user,
+              }),
             ]
           : []),
       ],
       editorProps: {
         attributes: {
-          class:
-            "tiptap focus:outline-none min-h-[60vh] pb-16 selection:bg-primary/20",
+          class: "tiptap focus:outline-none min-h-[60vh] pb-16 selection:bg-primary/20",
         },
       },
       immediatelyRender: false,
     }
-    // 'user' cũng là một dependency vì nó được dùng trong CollaborationCursor
-  }, [collabState, user, initialContent, onSave, onStatusChange]) // Thêm các props có thể thay đổi
+  }, [collabState, user, initialContent, onSave, onStatusChange])
 
-  const editor = useEditor(editorOptions, [docId]) // Chỉ tạo lại editor khi docId thay đổi
+  const editor = useEditor(editorOptions, [docId, collabState?.ydoc])
 
   useEffect(() => {
     if (!editor) return
@@ -191,19 +226,20 @@ export function TiptapEditor({ docId, initialContent, onSave, onStatusChange, on
     if (!editor) return
     const previousUrl = editor.getAttributes("link").href as string | undefined
     const url = typeof window !== "undefined" ? window.prompt("Link URL", previousUrl || "") : null
-
     if (url === null) return
     if (url === "") {
       editor.chain().focus().unsetLink().run()
       return
     }
-
     editor.chain().focus().setLink({ href: url }).run()
   }, [editor])
 
-  // Trì hoãn render cho đến khi editor sẵn sàng
   if (!editor) {
-    return null // Hoặc hiển thị một skeleton loading
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-muted-foreground">Đang tải editor...</div>
+      </div>
+    )
   }
 
   const characterCount = editor?.storage.characterCount?.characters() ?? 0
@@ -213,45 +249,40 @@ export function TiptapEditor({ docId, initialContent, onSave, onStatusChange, on
       {editor && (
         <BubbleMenu
           editor={editor}
-          tippyOptions={{ duration: 150 }}
-          className="rounded-md border border-border bg-popover shadow-md p-1 flex gap-1"
+          tippyOptions={{ duration: 100 }}
+          className="flex items-center gap-1 rounded-lg border bg-background p-1 shadow-md"
         >
           <Button
-            variant={editor.isActive("bold") ? "default" : "ghost"}
-            size="icon"
-            className="h-8 w-8"
+            size="sm"
+            variant={editor.isActive("bold") ? "secondary" : "ghost"}
             onClick={() => editor.chain().focus().toggleBold().run()}
           >
             <Bold className="h-4 w-4" />
           </Button>
           <Button
-            variant={editor.isActive("italic") ? "default" : "ghost"}
-            size="icon"
-            className="h-8 w-8"
+            size="sm"
+            variant={editor.isActive("italic") ? "secondary" : "ghost"}
             onClick={() => editor.chain().focus().toggleItalic().run()}
           >
             <Italic className="h-4 w-4" />
           </Button>
           <Button
-            variant={editor.isActive("underline") ? "default" : "ghost"}
-            size="icon"
-            className="h-8 w-8"
+            size="sm"
+            variant={editor.isActive("underline") ? "secondary" : "ghost"}
             onClick={() => editor.chain().focus().toggleUnderline().run()}
           >
             <UnderlineIcon className="h-4 w-4" />
           </Button>
           <Button
-            variant={editor.isActive("code") ? "default" : "ghost"}
-            size="icon"
-            className="h-8 w-8"
+            size="sm"
+            variant={editor.isActive("code") ? "secondary" : "ghost"}
             onClick={() => editor.chain().focus().toggleCode().run()}
           >
             <Code className="h-4 w-4" />
           </Button>
           <Button
-            variant={editor.isActive("link") ? "default" : "ghost"}
-            size="icon"
-            className="h-8 w-8"
+            size="sm"
+            variant={editor.isActive("link") ? "secondary" : "ghost"}
             onClick={handleSetLink}
           >
             <Link2 className="h-4 w-4" />
@@ -259,9 +290,9 @@ export function TiptapEditor({ docId, initialContent, onSave, onStatusChange, on
         </BubbleMenu>
       )}
 
-      <EditorContent editor={editor} className="min-h-[60vh]" />
+      <EditorContent editor={editor} />
 
-      <div className="absolute bottom-4 right-4 text-xs text-muted-foreground bg-background/80 backdrop-blur px-3 py-1 rounded-full border border-border shadow-sm">
+      <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
         {characterCount.toLocaleString()} characters
       </div>
     </div>

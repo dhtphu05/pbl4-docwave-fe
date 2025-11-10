@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 
 export interface Document {
   id: string
@@ -40,10 +40,10 @@ interface DocumentContextType {
   shareSettings: ShareSettings
   searchQuery: string
   setSearchQuery: (query: string) => void
-  createDocument: (title: string) => Document
-  updateDocument: (id: string, updates: Partial<Document>) => void
-  deleteDocument: (id: string) => void
-  restoreDocument: (id: string) => void
+  createDocument: (title: string) => Promise<Document>
+  updateDocument: (id: string, updates: Partial<Document>) => Promise<Document | null>
+  deleteDocument: (id: string) => Promise<Document | null>
+  restoreDocument: (id: string) => Promise<Document | null>
   starDocument: (id: string) => void
   unstarDocument: (id: string) => void
   shareDocument: (id: string, settings: ShareSettings) => void
@@ -71,90 +71,95 @@ interface DocumentProviderProps {
   children: ReactNode
 }
 
-export function DocumentProvider({ children }: DocumentProviderProps) {
-  const [documents, setDocuments] = useState<Document[]>([
-    {
-      id: "1",
-      title: "Welcome to DocWave",
-      content: "This is your first document...",
-      owner: {
-        id: "user-1",
-        name: "You",
-        avatar: "/abstract-geometric-shapes.png",
-      },
-      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
-      modifiedAt: new Date(),
-      isStarred: true,
-      isShared: true,
-      permissions: [
-        { userId: "user-1", role: "owner" },
-        { userId: "user-2", role: "editor" },
-        { userId: "user-3", role: "commenter" },
-      ],
-      tags: ["welcome", "getting-started"],
-      size: "1.2 KB",
-      status: "active",
-    },
-    {
-      id: "2",
-      title: "Project Proposal Draft",
-      content: "Executive summary...",
-      owner: {
-        id: "user-1",
-        name: "You",
-        avatar: "/abstract-geometric-shapes.png",
-      },
-      createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
-      modifiedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // 1 day ago
-      isStarred: false,
-      isShared: false,
-      permissions: [{ userId: "user-1", role: "owner" }],
-      tags: ["project", "draft"],
-      size: "3.4 KB",
-      status: "active",
-    },
-    {
-      id: "3",
-      title: "Meeting Notes - Q4 Planning",
-      content: "Attendees: Alice, Bob, Charlie...",
-      owner: {
-        id: "user-2",
-        name: "Alice Johnson",
-        avatar: "/abstract-geometric-shapes.png",
-      },
-      createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
-      modifiedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), // 3 days ago
-      isStarred: true,
-      isShared: true,
-      permissions: [
-        { userId: "user-2", role: "owner" },
-        { userId: "user-1", role: "editor" },
-      ],
-      tags: ["meeting", "planning"],
-      size: "2.1 KB",
-      status: "active",
-    },
-    {
-      id: "4",
-      title: "Old Document",
-      content: "This document was deleted...",
-      owner: {
-        id: "user-1",
-        name: "You",
-        avatar: "/abstract-geometric-shapes.png",
-      },
-      createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
-      modifiedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000), // 15 days ago
-      isStarred: false,
-      isShared: false,
-      permissions: [{ userId: "user-1", role: "owner" }],
-      tags: [],
-      size: "0.8 KB",
-      status: "trashed",
-    },
-  ])
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000"
+const DEFAULT_AVATAR = "/abstract-geometric-shapes.png"
 
-  const [currentDocument, setCurrentDocument] = useState<Document | null>(documents[0])
+type ApiDocument = {
+  id: string
+  title: string
+  content: unknown
+  createdAt: string
+  updatedAt: string
+  isArchived: boolean
+  createdBy?: {
+    id: string
+    name?: string | null
+    avatarUrl?: string | null
+  } | null
+}
+
+const serializeContent = (snapshot: unknown): string => {
+  if (snapshot === null || snapshot === undefined) return ""
+  if (typeof snapshot === "string") return snapshot
+  try {
+    return JSON.stringify(snapshot)
+  } catch {
+    return ""
+  }
+}
+
+const calculateDocSize = (content: string) => {
+  if (!content) return "0 KB"
+  const bytes = new TextEncoder().encode(content).length
+  const kb = Math.round((bytes / 1024) * 10) / 10
+  return `${kb} KB`
+}
+
+const mapApiDocument = (doc: ApiDocument): Document => {
+  const serializedContent = serializeContent(doc.content)
+  const ownerId = doc.createdBy?.id ?? "demo-user"
+  return {
+    id: doc.id,
+    title: doc.title,
+    content: serializedContent,
+    owner: {
+      id: ownerId,
+      name: doc.createdBy?.name ?? "Demo User",
+      avatar: doc.createdBy?.avatarUrl ?? DEFAULT_AVATAR,
+    },
+    createdAt: new Date(doc.createdAt),
+    modifiedAt: new Date(doc.updatedAt),
+    isStarred: false,
+    isShared: false,
+    permissions: [{ userId: ownerId, role: "owner" }],
+    tags: [],
+    size: calculateDocSize(serializedContent),
+    status: doc.isArchived ? "trashed" : "active",
+  }
+}
+
+const prepareContentForApi = (content?: string) => {
+  if (content === undefined) return undefined
+  if (!content) return ""
+  try {
+    return JSON.parse(content)
+  } catch {
+    return content
+  }
+}
+
+const buildLocalDocument = (title = "Untitled Document"): Document => ({
+  id: `local-${Date.now()}`,
+  title,
+  content: "",
+  owner: {
+    id: "local-user",
+    name: "You",
+    avatar: DEFAULT_AVATAR,
+  },
+  createdAt: new Date(),
+  modifiedAt: new Date(),
+  isStarred: false,
+  isShared: false,
+  permissions: [{ userId: "local-user", role: "owner" }],
+  tags: [],
+  size: "0 KB",
+  status: "active",
+})
+
+export function DocumentProvider({ children }: DocumentProviderProps) {
+  const [documents, setDocuments] = useState<Document[]>([])
+  const [currentDocument, setCurrentDocument] = useState<Document | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [shareSettings, setShareSettings] = useState<ShareSettings>({
     isPublic: false,
@@ -163,56 +168,135 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
     requireSignIn: true,
   })
 
-  const createDocument = (title: string): Document => {
-    const newDoc: Document = {
-      id: Date.now().toString(),
-      title,
-      content: "",
-      owner: {
-        id: "user-1",
-        name: "You",
-        avatar: "/abstract-geometric-shapes.png",
-      },
-      createdAt: new Date(),
-      modifiedAt: new Date(),
-      isStarred: false,
-      isShared: false,
-      permissions: [{ userId: "user-1", role: "owner" }],
-      tags: [],
-      size: "0 KB",
-      status: "active",
+  const createDocument = useCallback(async (title: string): Promise<Document> => {
+    const response = await fetch(`${API_BASE_URL}/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    })
+    if (!response.ok) {
+      throw new Error("Failed to create document")
     }
-    setDocuments((prev) => [newDoc, ...prev])
-    setCurrentDocument(newDoc)
-    return newDoc
-  }
+    const created = mapApiDocument(await response.json())
+    setDocuments((prev) => [created, ...prev])
+    setCurrentDocument(created)
+    return created
+  }, [])
 
-  const updateDocument = (id: string, updates: Partial<Document>) => {
-    setDocuments((prev) => prev.map((doc) => (doc.id === id ? { ...doc, ...updates, modifiedAt: new Date() } : doc)))
-    if (currentDocument?.id === id) {
-      setCurrentDocument((prev) => (prev ? { ...prev, ...updates, modifiedAt: new Date() } : null))
+  const refreshDocuments = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/documents`)
+      if (!response.ok) {
+        throw new Error("Failed to load documents")
+      }
+      const data: ApiDocument[] = await response.json()
+      if (data.length === 0) {
+        try {
+          await createDocument("Untitled Document")
+        } catch (creationError) {
+          console.error("Auto-create document failed", creationError)
+          const fallback = buildLocalDocument()
+          setDocuments([fallback])
+          setCurrentDocument(fallback)
+        }
+        return
+      }
+      const mapped = data.map(mapApiDocument)
+      setDocuments(mapped)
+      setCurrentDocument((prev) => {
+        if (!prev) return mapped[0] ?? null
+        return mapped.find((doc) => doc.id === prev.id) ?? mapped[0] ?? null
+      })
+    } catch (error) {
+      console.error("Failed to fetch documents", error)
+      const fallback = buildLocalDocument()
+      setDocuments([fallback])
+      setCurrentDocument(fallback)
     }
-  }
+  }, [createDocument])
 
-  const deleteDocument = (id: string) => {
-    updateDocument(id, { status: "trashed" })
-  }
+  useEffect(() => {
+    refreshDocuments()
+  }, [refreshDocuments])
 
-  const restoreDocument = (id: string) => {
-    updateDocument(id, { status: "active" })
-  }
+  const updateDocument = useCallback(
+    async (id: string, updates: Partial<Document>): Promise<Document | null> => {
+      const payload: Record<string, unknown> = {}
+      if (updates.title !== undefined) payload.title = updates.title
+      if (updates.content !== undefined) payload.content = prepareContentForApi(updates.content)
+      if (updates.status !== undefined) payload.isArchived = updates.status === "trashed"
+
+      let apiDoc: Document | null = null
+      if (Object.keys(payload).length > 0) {
+        const response = await fetch(`${API_BASE_URL}/documents/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+        if (!response.ok) {
+          throw new Error("Failed to update document")
+        }
+        apiDoc = mapApiDocument(await response.json())
+      }
+
+      const applyLocalUpdates = (doc: Document): Document => {
+        if (doc.id !== id) return doc
+        const base = apiDoc ?? doc
+        const merged: Document = {
+          ...base,
+          ...updates,
+        }
+
+        if (updates.content !== undefined) {
+          merged.content = updates.content
+          merged.size = calculateDocSize(updates.content)
+        }
+
+        if (updates.status === undefined && apiDoc) {
+          merged.status = apiDoc.status
+        }
+
+        merged.modifiedAt =
+          apiDoc?.modifiedAt ?? (updates.title || updates.content || updates.status ? new Date() : doc.modifiedAt)
+
+        return merged
+      }
+
+      setDocuments((prev) => prev.map(applyLocalUpdates))
+      setCurrentDocument((prev) => (prev && prev.id === id ? applyLocalUpdates(prev) : prev))
+
+      return apiDoc
+    },
+    [],
+  )
+
+  const deleteDocument = useCallback(
+    (id: string) => updateDocument(id, { status: "trashed" }),
+    [updateDocument],
+  )
+
+  const restoreDocument = useCallback(
+    (id: string) => updateDocument(id, { status: "active" }),
+    [updateDocument],
+  )
 
   const starDocument = (id: string) => {
-    updateDocument(id, { isStarred: true })
+    updateDocument(id, { isStarred: true }).catch((error) =>
+      console.error("Failed to star document", error),
+    )
   }
 
   const unstarDocument = (id: string) => {
-    updateDocument(id, { isStarred: false })
+    updateDocument(id, { isStarred: false }).catch((error) =>
+      console.error("Failed to unstar document", error),
+    )
   }
 
   const shareDocument = (id: string, settings: ShareSettings) => {
     setShareSettings(settings)
-    updateDocument(id, { isShared: settings.isPublic || settings.allowComments || settings.allowEditing })
+    updateDocument(id, {
+      isShared: settings.isPublic || settings.allowComments || settings.allowEditing,
+    }).catch((error) => console.error("Failed to update share setting", error))
   }
 
   const addCollaborator = (documentId: string, email: string, role: "viewer" | "commenter" | "editor") => {
