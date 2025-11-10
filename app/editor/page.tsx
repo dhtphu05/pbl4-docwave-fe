@@ -5,6 +5,13 @@ export const metadata = {
   description: "Create and edit documents with real-time collaboration",
 }
 
-export default function EditorPage() {
-  return <DocWaveEditor />
+type EditorPageProps = {
+  searchParams?: {
+    id?: string
+  }
+}
+
+export default function EditorPage({ searchParams }: EditorPageProps) {
+  const docId = typeof searchParams?.id === "string" ? searchParams.id : undefined
+  return <DocWaveEditor docId={docId} />
 }

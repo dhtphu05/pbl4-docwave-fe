@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useCallback } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import type { Editor } from "@tiptap/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -59,10 +60,14 @@ function parseDocumentContent(rawContent?: string) {
   return rawContent
 }
 
-function DocWaveEditorContent() {
+interface DocWaveEditorContentProps {
+  docId?: string
+}
+
+function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
   const { onlineUsers } = useCollaboration()
   const { suggestionMode, toggleSuggestionMode } = useComments()
-  const { currentDocument, updateDocument, createDocument } = useDocuments()
+  const { currentDocument, updateDocument, createDocument, selectDocument } = useDocuments()
   const [documentTitle, setDocumentTitle] = useState(currentDocument?.title || "Untitled Document")
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
@@ -71,6 +76,9 @@ function DocWaveEditorContent() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [editorInstance, setEditorInstance] = useState<Editor | null>(null)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const currentDocIdInUrl = searchParams?.get("id") ?? undefined
 
   const resolvedInitialContent = useMemo(
     () => parseDocumentContent(currentDocument?.content),
@@ -100,6 +108,17 @@ function DocWaveEditorContent() {
       setLastSaved(new Date(currentDocument.modifiedAt))
     }
   }, [currentDocument])
+
+  useEffect(() => {
+    selectDocument(docId ?? null)
+  }, [docId, selectDocument])
+
+  useEffect(() => {
+    if (!currentDocument) return
+    if (currentDocIdInUrl === currentDocument.id) return
+    const url = `/editor?id=${currentDocument.id}`
+    router.replace(url)
+  }, [currentDocument?.id, currentDocIdInUrl, router])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -507,6 +526,10 @@ function DocWaveEditorContent() {
   )
 }
 
-export function DocWaveEditor() {
-  return <DocWaveEditorContent />
+interface DocWaveEditorProps {
+  docId?: string
+}
+
+export function DocWaveEditor({ docId }: DocWaveEditorProps = {}) {
+  return <DocWaveEditorContent docId={docId} />
 }

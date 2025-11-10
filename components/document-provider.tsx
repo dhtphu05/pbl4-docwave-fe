@@ -40,6 +40,7 @@ interface DocumentContextType {
   shareSettings: ShareSettings
   searchQuery: string
   setSearchQuery: (query: string) => void
+  selectDocument: (id: string | null) => void
   createDocument: (title: string) => Promise<Document>
   updateDocument: (id: string, updates: Partial<Document>) => Promise<Document | null>
   deleteDocument: (id: string) => Promise<Document | null>
@@ -167,6 +168,7 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
     allowEditing: false,
     requireSignIn: true,
   })
+  const [preferredDocumentId, setPreferredDocumentId] = useState<string | null>(null)
 
   const createDocument = useCallback(async (title: string): Promise<Document> => {
     const response = await fetch(`${API_BASE_URL}/documents`, {
@@ -204,6 +206,9 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
       const mapped = data.map(mapApiDocument)
       setDocuments(mapped)
       setCurrentDocument((prev) => {
+        if (preferredDocumentId) {
+          return mapped.find((doc) => doc.id === preferredDocumentId) ?? prev ?? mapped[0] ?? null
+        }
         if (!prev) return mapped[0] ?? null
         return mapped.find((doc) => doc.id === prev.id) ?? mapped[0] ?? null
       })
@@ -213,11 +218,33 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
       setDocuments([fallback])
       setCurrentDocument(fallback)
     }
-  }, [createDocument])
+  }, [createDocument, preferredDocumentId])
 
   useEffect(() => {
     refreshDocuments()
   }, [refreshDocuments])
+
+  const fetchDocumentById = useCallback(async (id: string): Promise<Document | null> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/documents/${id}`)
+      if (!response.ok) {
+        throw new Error("Failed to fetch document")
+      }
+      const fetched = mapApiDocument(await response.json())
+      setDocuments((prev) => {
+        const exists = prev.some((doc) => doc.id === fetched.id)
+        if (exists) {
+          return prev.map((doc) => (doc.id === fetched.id ? fetched : doc))
+        }
+        return [fetched, ...prev]
+      })
+      setCurrentDocument(fetched)
+      return fetched
+    } catch (error) {
+      console.error(`Failed to fetch document ${id}`, error)
+      return null
+    }
+  }, [])
 
   const updateDocument = useCallback(
     async (id: string, updates: Partial<Document>): Promise<Document | null> => {
@@ -381,6 +408,23 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
       .sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime())
   }
 
+  const selectDocument = useCallback(
+    (id: string | null) => {
+      setPreferredDocumentId(id)
+      if (!id) {
+        setCurrentDocument((prev) => prev ?? (documents[0] ?? null))
+        return
+      }
+      const existing = documents.find((doc) => doc.id === id)
+      if (existing) {
+        setCurrentDocument(existing)
+      } else {
+        fetchDocumentById(id).catch((error) => console.error("Failed to load document by id", error))
+      }
+    },
+    [documents, fetchDocumentById],
+  )
+
   return (
     <DocumentContext.Provider
       value={{
@@ -390,6 +434,7 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
         searchQuery,
         setSearchQuery,
         createDocument,
+        selectDocument,
         updateDocument,
         deleteDocument,
         restoreDocument,
