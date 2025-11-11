@@ -16,6 +16,7 @@ import { SearchDialog } from "@/components/search-dialog"
 import { TemplateGallery } from "@/components/template-gallery"
 import { MobileToolbar } from "@/components/mobile-toolbar"
 import { MobileDrawer } from "@/components/mobile-drawer"
+import { UserMenu } from "@/components/user-menu"
 import { TiptapEditor } from "@/components/editor/tiptap-editor"
 import {
   Search,
@@ -401,6 +402,10 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
           <Button variant="ghost" size="sm">
             <MoreHorizontal className="h-4 w-4" />
           </Button>
+          <div className="hidden md:flex">
+            <UserMenu />
+          </div>
+          <UserMenu variant="icon" className="md:hidden" />
         </div>
       </header>
 

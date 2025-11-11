@@ -38,3 +38,13 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 ## TipTap collaboration troubleshooting
 
 If you see `TypeError: Cannot read properties of undefined (reading 'doc')` when loading the editor, make sure **all** TipTap packages use the same major version. Mixing `@tiptap/extension-collaboration@3.x` with the rest of the `2.x` ecosystem causes the Yjs plugin to receive an undefined fragment. Align the collaboration and collaboration cursor extensions to the `2.x` line (e.g. `^2.26.4`), reinstall dependencies (`pnpm install`), and restart the dev server. After the downgrade both extensions use `y-prosemirror`, so the runtime error disappears.
+
+## Google authentication
+
+The editor now supports Google sign-in on the client. Configure the following environment variable (in `.env`) with the OAuth Client ID created in Google Cloud Console:
+
+```
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your_client_id.apps.googleusercontent.com
+```
+
+After restarting `pnpm dev`, a “Continue with Google” button appears in the editor toolbar (and an icon on smaller screens). Signing in populates your avatar/name across awareness cursors and comments. Signing out clears the local session; no server-side persistence happens yet, so remember to add backend verification before going to production.

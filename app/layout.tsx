@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { Analytics } from "@vercel/analytics/next"
 import { Suspense } from "react"
 import "./globals.css"
+import "@/components/editor/collaboration-cursor.css"
 import { geist, geistMono } from "./font"
 import { AppProviders } from "@/providers/app-providers"
 

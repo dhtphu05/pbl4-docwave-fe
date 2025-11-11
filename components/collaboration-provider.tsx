@@ -1,6 +1,8 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { useAuth } from "@/components/auth-provider"
+import { GUEST_COLORS, pickColorForId } from "@/lib/auth"
 
 interface User {
   id: string
@@ -41,32 +43,61 @@ interface CollaborationProviderProps {
   children: ReactNode
 }
 
-export function CollaborationProvider({ children }: CollaborationProviderProps) {
-  const [currentUser] = useState<User>({
-    id: "user-1",
-    name: "You",
+const LOCAL_STORAGE_KEY = "docwave-guest-user"
+
+const createGuestUser = (index: number): User => {
+  const color = GUEST_COLORS[index % GUEST_COLORS.length]
+  return {
+    id: `guest-${Date.now()}-${index}`,
+    name: `Guest ${index}`,
     avatar: "/abstract-geometric-shapes.png",
-    color: "#8b5cf6",
-  })
+    color,
+  }
+}
 
-  const [collaborators, setCollaborators] = useState<User[]>([
-    {
-      id: "user-2",
-      name: "Alice Johnson",
-      avatar: "/abstract-geometric-shapes.png",
-      color: "#ef4444",
-      cursor: { blockId: "2", position: 15 },
-    },
-    {
-      id: "user-3",
-      name: "Bob Smith",
-      avatar: "/abstract-geometric-shapes.png",
-      color: "#10b981",
-      selection: { blockId: "3", start: 20, end: 35 },
-    },
-  ])
+const readStoredUser = () => {
+  if (typeof window === "undefined") return null
+  const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as User
+  } catch {
+    return null
+  }
+}
 
-  const onlineUsers = [currentUser, ...collaborators]
+export function CollaborationProvider({ children }: CollaborationProviderProps) {
+  const { user: authUser } = useAuth()
+  const [guestUser, setGuestUser] = useState<User>(() => readStoredUser() ?? createGuestUser(1))
+  const [collaborators] = useState<User[]>([])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const stored = readStoredUser()
+    if (stored) {
+      setGuestUser(stored)
+      return
+    }
+    const guestCount = Number(window.localStorage.getItem(`${LOCAL_STORAGE_KEY}:count`) ?? "0") + 1
+    window.localStorage.setItem(`${LOCAL_STORAGE_KEY}:count`, guestCount.toString())
+    const generated = createGuestUser(guestCount)
+    window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(generated))
+    setGuestUser(generated)
+  }, [])
+
+  const resolvedUser = useMemo<User>(() => {
+    if (authUser) {
+      return {
+        id: authUser.id,
+        name: authUser.name,
+        avatar: authUser.avatar,
+        color: authUser.color ?? pickColorForId(authUser.id),
+      }
+    }
+    return guestUser
+  }, [authUser, guestUser])
+
+  const onlineUsers = useMemo(() => [resolvedUser, ...collaborators], [resolvedUser, collaborators])
 
   const updateCursor = (blockId: string, position: number) => {
     // In a real app, this would send cursor position to other users
@@ -86,32 +117,10 @@ export function CollaborationProvider({ children }: CollaborationProviderProps) 
     }
   }
 
-  // Simulate real-time cursor movements
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCollaborators((prev) =>
-        prev.map((user) => {
-          if (user.id === "user-2" && user.cursor) {
-            return {
-              ...user,
-              cursor: {
-                ...user.cursor,
-                position: Math.max(0, user.cursor.position + (Math.random() > 0.5 ? 1 : -1)),
-              },
-            }
-          }
-          return user
-        }),
-      )
-    }, 3000)
-
-    return () => clearInterval(interval)
-  }, [])
-
   return (
     <CollaborationContext.Provider
       value={{
-        currentUser,
+        currentUser: resolvedUser,
         collaborators,
         updateCursor,
         updateSelection,

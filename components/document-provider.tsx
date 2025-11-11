@@ -1,6 +1,7 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react"
+import { useAuth } from "@/components/auth-provider"
 
 export interface Document {
   id: string
@@ -159,6 +160,7 @@ const buildLocalDocument = (title = "Untitled Document"): Document => ({
 })
 
 export function DocumentProvider({ children }: DocumentProviderProps) {
+  const { accessToken } = useAuth()
   const [documents, setDocuments] = useState<Document[]>([])
   const [currentDocument, setCurrentDocument] = useState<Document | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
@@ -169,11 +171,32 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
     requireSignIn: true,
   })
   const [preferredDocumentId, setPreferredDocumentId] = useState<string | null>(null)
+  const guestDocRef = useRef<Document | null>(null)
+
+  const ensureGuestDocument = useCallback((): Document => {
+    if (!guestDocRef.current) {
+      guestDocRef.current = buildLocalDocument("Guest Document")
+    }
+    setPreferredDocumentId(null)
+    setDocuments([guestDocRef.current])
+    setCurrentDocument(guestDocRef.current)
+    return guestDocRef.current
+  }, [])
 
   const createDocument = useCallback(async (title: string): Promise<Document> => {
+    if (!accessToken) {
+      const fallback = buildLocalDocument(title)
+      setDocuments((prev) => [fallback, ...prev])
+      setCurrentDocument(fallback)
+      return fallback
+    }
+
     const response = await fetch(`${API_BASE_URL}/documents`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
       body: JSON.stringify({ title }),
     })
     if (!response.ok) {
@@ -183,11 +206,17 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
     setDocuments((prev) => [created, ...prev])
     setCurrentDocument(created)
     return created
-  }, [])
+  }, [accessToken])
 
   const refreshDocuments = useCallback(async () => {
+    if (!accessToken) {
+      ensureGuestDocument()
+      return
+    }
     try {
-      const response = await fetch(`${API_BASE_URL}/documents`)
+      const response = await fetch(`${API_BASE_URL}/documents`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
       if (!response.ok) {
         throw new Error("Failed to load documents")
       }
@@ -197,9 +226,7 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
           await createDocument("Untitled Document")
         } catch (creationError) {
           console.error("Auto-create document failed", creationError)
-          const fallback = buildLocalDocument()
-          setDocuments([fallback])
-          setCurrentDocument(fallback)
+          ensureGuestDocument()
         }
         return
       }
@@ -214,19 +241,25 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
       })
     } catch (error) {
       console.error("Failed to fetch documents", error)
-      const fallback = buildLocalDocument()
-      setDocuments([fallback])
-      setCurrentDocument(fallback)
+      ensureGuestDocument()
     }
-  }, [createDocument, preferredDocumentId])
+  }, [accessToken, createDocument, preferredDocumentId, ensureGuestDocument])
 
   useEffect(() => {
+    if (!accessToken) {
+      ensureGuestDocument()
+      return
+    }
+    guestDocRef.current = null
     refreshDocuments()
-  }, [refreshDocuments])
+  }, [accessToken, refreshDocuments, ensureGuestDocument])
 
   const fetchDocumentById = useCallback(async (id: string): Promise<Document | null> => {
+    if (!accessToken) return null
     try {
-      const response = await fetch(`${API_BASE_URL}/documents/${id}`)
+      const response = await fetch(`${API_BASE_URL}/documents/${id}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
       if (!response.ok) {
         throw new Error("Failed to fetch document")
       }
@@ -244,7 +277,7 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
       console.error(`Failed to fetch document ${id}`, error)
       return null
     }
-  }, [])
+  }, [accessToken])
 
   const updateDocument = useCallback(
     async (id: string, updates: Partial<Document>): Promise<Document | null> => {
@@ -254,10 +287,13 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
       if (updates.status !== undefined) payload.isArchived = updates.status === "trashed"
 
       let apiDoc: Document | null = null
-      if (Object.keys(payload).length > 0) {
+      if (Object.keys(payload).length > 0 && accessToken) {
         const response = await fetch(`${API_BASE_URL}/documents/${id}`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
           body: JSON.stringify(payload),
         })
         if (!response.ok) {
@@ -294,7 +330,7 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
 
       return apiDoc
     },
-    [],
+    [accessToken],
   )
 
   const deleteDocument = useCallback(

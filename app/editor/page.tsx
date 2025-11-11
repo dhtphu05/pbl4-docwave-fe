@@ -1,4 +1,4 @@
-import { DocWaveEditor } from "@/components/docwave-editor"
+import { EditorShell } from "@/components/editor/editor-shell"
 
 export const metadata = {
   title: "Editor - DocWave",
@@ -13,5 +13,5 @@ type EditorPageProps = {
 
 export default function EditorPage({ searchParams }: EditorPageProps) {
   const docId = typeof searchParams?.id === "string" ? searchParams.id : undefined
-  return <DocWaveEditor docId={docId} />
+  return <EditorShell docId={docId} />
 }
