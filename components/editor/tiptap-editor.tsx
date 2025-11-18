@@ -42,6 +42,7 @@ type Props = {
   onSave?: (json: unknown) => void
   onStatusChange?: (status: "saved" | "saving" | "offline") => void
   onEditorReady?: (editor: Editor | null) => void
+  onPresenceChange?: (users: Array<{ id: string; name: string; avatar?: string; color?: string }>) => void
   className?: string
 }
 
@@ -51,6 +52,7 @@ export function TiptapEditor({
   onSave,
   onStatusChange,
   onEditorReady,
+  onPresenceChange,
   className
 }: Props) {
   const { currentUser: user } = useCollaboration()
@@ -71,6 +73,8 @@ export function TiptapEditor({
     let provider: WebsocketProvider | null = null
     let cancelled = false
 
+    let awarenessHandler: (() => void) | null = null
+
     ;(async () => {
       const Y = await import("yjs")
       if (cancelled) {
@@ -82,9 +86,28 @@ export function TiptapEditor({
 
       const undoManager = new Y.UndoManager(ydoc.getXmlFragment(COLLAB_FRAGMENT))
 
+      const emitPresence = () => {
+        if (!provider || !onPresenceChange) return
+        const states = Array.from(provider.awareness.getStates().values())
+        const users = states
+          .map((s: any) => s?.user)
+          .filter(Boolean)
+          .map((u: any) => ({
+            id: u.id ?? "",
+            name: u.name ?? "Unknown",
+            avatar: u.avatar,
+            color: u.color,
+          }))
+        onPresenceChange(users)
+      }
+
+      awarenessHandler = emitPresence
+      provider.awareness.on("change", awarenessHandler)
+
       provider.on("status", (event: { status: "connected" | "disconnected" | "connecting" }) => {
         if (event.status === "connected") {
           onStatusChange?.("saved")
+          emitPresence()
         } else {
           onStatusChange?.("offline")
         }
@@ -92,16 +115,22 @@ export function TiptapEditor({
 
       provider.awareness.setLocalStateField("user", user)
 
+      emitPresence()
+
       setCollabState({ ydoc, provider, undoManager })
     })()
 
     return () => {
       cancelled = true
+      if (provider && awarenessHandler) {
+        provider.awareness.off("change", awarenessHandler)
+      }
       provider?.destroy()
       ydoc?.destroy()
       setCollabState(null)
+      onPresenceChange?.([])
     }
-  }, [docId, user, onStatusChange])
+  }, [docId, user, onStatusChange, onPresenceChange])
 
   const editorOptions = useMemo(() => {
     const undoExtension = collabState?.undoManager

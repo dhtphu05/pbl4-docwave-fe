@@ -65,7 +65,7 @@ interface DocWaveEditorContentProps {
 }
 
 function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
-  const { onlineUsers } = useCollaboration()
+  const { currentUser } = useCollaboration()
   // Comments are temporarily disabled
   const { suggestionMode, toggleSuggestionMode } = useComments()
   const { currentDocument, updateDocument, createDocument, selectDocument } = useDocuments()
@@ -77,6 +77,9 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [editorInstance, setEditorInstance] = useState<Editor | null>(null)
+  const [presenceUsers, setPresenceUsers] = useState<
+    Array<{ id: string; name: string; avatar?: string; color?: string }>
+  >([])
   const router = useRouter()
   const searchParams = useSearchParams()
   const currentDocIdInUrl = searchParams?.get("id") ?? undefined
@@ -219,9 +222,9 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Topbar */}
-      <header className="flex items-center justify-between px-4 py-2 border-b border-border bg-background">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 border-b border-border bg-background">
         {/* Left section */}
-        <div className="flex items-center gap-2 md:gap-4">
+        <div className="flex items-center gap-2 md:gap-4 flex-wrap md:flex-nowrap">
           <MobileDrawer onNewDocument={handleNewDocument} />
 
           <div className="flex items-center gap-2">
@@ -366,39 +369,51 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
         </div>
 
         {/* Right section */}
-        <div className="flex items-center gap-1 md:gap-3">
-          <Button variant="ghost" size="sm" onClick={() => setSearchOpen(true)} className="hidden sm:flex">
-            <Search className="h-4 w-4" />
-          </Button>
-          <ShareDialog documentId={currentDocument?.id || "1"}>
-            <Button variant="default" size="sm" className="bg-primary hover:bg-primary/90">
-              <Share2 className="h-4 w-4 md:mr-2" />
-              <span className="hidden md:inline">Share</span>
-            </Button>
-          </ShareDialog>
-          <Button
-            variant={suggestionMode ? "default" : "ghost"}
-            size="sm"
-            onClick={toggleSuggestionMode}
-            className={cn(suggestionMode ? "bg-primary hover:bg-primary/90" : "", "hidden md:flex")}
-          >
-            <MessageSquare className="h-4 w-4" />
-          </Button>
-          <div className="hidden sm:flex -space-x-2">
-            {onlineUsers.slice(0, isMobile ? 2 : 3).map((user) => (
-              <Avatar key={user.id} className="h-6 w-6 md:h-8 md:w-8 border-2 border-background">
-                <AvatarImage src={user.avatar || "/placeholder.svg"} />
-                <AvatarFallback style={{ backgroundColor: user.color, color: "white" }}>
-                  {user.name.charAt(0)}
-                </AvatarFallback>
-              </Avatar>
-            ))}
-            {onlineUsers.length > (isMobile ? 2 : 3) && (
-              <div className="h-6 w-6 md:h-8 md:w-8 rounded-full bg-muted border-2 border-background flex items-center justify-center text-xs font-medium">
-                +{onlineUsers.length - (isMobile ? 2 : 3)}
-              </div>
-            )}
-          </div>
+        <div className="flex items-center gap-2 md:gap-3 flex-wrap md:flex-nowrap justify-end">
+          {(() => {
+            const uniques = [currentUser, ...presenceUsers].filter(
+              (u, idx, arr) => u && u.id && arr.findIndex((x) => x?.id === u.id) === idx,
+            )
+            const capacity = isMobile ? 2 : 3
+            const visibleUsers = uniques.slice(0, capacity)
+            const remaining = Math.max(uniques.length - capacity, 0)
+            return (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => setSearchOpen(true)} className="hidden sm:flex">
+                  <Search className="h-4 w-4" />
+                </Button>
+                <ShareDialog documentId={currentDocument?.id || "1"}>
+                  <Button variant="default" size="sm" className="bg-primary hover:bg-primary/90">
+                    <Share2 className="h-4 w-4 md:mr-2" />
+                    <span className="hidden md:inline">Share</span>
+                  </Button>
+                </ShareDialog>
+                <Button
+                  variant={suggestionMode ? "default" : "ghost"}
+                  size="sm"
+                  onClick={toggleSuggestionMode}
+                  className={cn(suggestionMode ? "bg-primary hover:bg-primary/90" : "", "hidden md:flex")}
+                >
+                  <MessageSquare className="h-4 w-4" />
+                </Button>
+                <div className="hidden sm:flex -space-x-2">
+                  {visibleUsers.map((user) => (
+                    <Avatar key={user.id} className="h-6 w-6 md:h-8 md:w-8 border-2 border-background">
+                      <AvatarImage src={user.avatar || "/placeholder.svg"} />
+                      <AvatarFallback style={{ backgroundColor: user.color, color: "white" }}>
+                        {user.name.charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
+                  ))}
+                  {remaining > 0 && (
+                    <div className="h-6 w-6 md:h-8 md:w-8 rounded-full bg-muted border-2 border-background flex items-center justify-center text-xs font-medium">
+                      +{remaining}
+                    </div>
+                  )}
+                </div>
+              </>
+            )
+          })()}
           <Badge variant="secondary" className={cn("text-xs hidden sm:flex", statusDisplay.className)}>
             {statusDisplay.text}
           </Badge>
@@ -482,15 +497,16 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
         <main className="flex-1 bg-card overflow-auto">
           <div className="max-w-4xl mx-auto p-4 md:p-8 pb-20 md:pb-8">
             <div className="bg-background min-h-[800px] rounded-lg shadow-sm border border-border p-4 md:p-8 touch-manipulation">
-              {currentDocument && (
-                <TiptapEditor
-                  docId={currentDocument.id}
-                  initialContent={resolvedInitialContent}
-                  onSave={handleEditorSave}
-                  onStatusChange={handleStatusChange}
-                  onEditorReady={setEditorInstance}
-                />
-              )}
+          {currentDocument && (
+            <TiptapEditor
+              docId={currentDocument.id}
+              initialContent={resolvedInitialContent}
+              onSave={handleEditorSave}
+              onStatusChange={handleStatusChange}
+              onEditorReady={setEditorInstance}
+              onPresenceChange={setPresenceUsers}
+            />
+          )}
             </div>
           </div>
         </main>

@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { useAuth } from "@/components/auth-provider"
 import { GUEST_COLORS, pickColorForId } from "@/lib/auth"
 
-interface User {
+export interface User {
   id: string
   name: string
   avatar: string
