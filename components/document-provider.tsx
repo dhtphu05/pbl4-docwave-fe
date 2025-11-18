@@ -16,6 +16,7 @@ export interface Document {
   modifiedAt: Date
   isStarred: boolean
   isShared: boolean
+  currentRole?: "owner" | "editor" | "commenter" | "viewer"
   permissions: {
     userId: string
     role: "viewer" | "commenter" | "editor" | "owner"
@@ -40,6 +41,8 @@ interface DocumentContextType {
   currentDocument: Document | null
   shareSettings: ShareSettings
   searchQuery: string
+  accessError: string | null
+  clearAccessError: () => void
   setSearchQuery: (query: string) => void
   selectDocument: (id: string | null) => void
   createDocument: (title: string) => Promise<Document>
@@ -110,6 +113,29 @@ const calculateDocSize = (content: string) => {
 const mapApiDocument = (doc: ApiDocument): Document => {
   const serializedContent = serializeContent(doc.content)
   const ownerId = doc.createdBy?.id ?? "demo-user"
+  const normalizeRole = (role?: string): "owner" | "editor" | "commenter" | "viewer" => {
+    switch ((role ?? "").toLowerCase()) {
+      case "owner":
+        return "owner"
+      case "edit":
+      case "editor":
+        return "editor"
+      case "comment":
+      case "commenter":
+        return "commenter"
+      default:
+        return "viewer"
+    }
+  }
+  const permissions =
+    (doc as any).permissions?.map((p: any) => ({
+      userId: p.userId,
+      role: normalizeRole(p.role),
+      email: p.email ?? undefined,
+      name: p.name ?? undefined,
+      avatar: p.avatar ?? undefined,
+    })) ?? []
+  const currentRole = normalizeRole((doc as any).currentUserRole)
   return {
     id: doc.id,
     title: doc.title,
@@ -123,7 +149,8 @@ const mapApiDocument = (doc: ApiDocument): Document => {
     modifiedAt: new Date(doc.updatedAt),
     isStarred: false,
     isShared: false,
-    permissions: [{ userId: ownerId, role: "owner" }],
+    currentRole,
+    permissions: permissions.length ? permissions : [{ userId: ownerId, role: "owner" }],
     tags: [],
     size: calculateDocSize(serializedContent),
     status: doc.isArchived ? "trashed" : "active",
@@ -164,6 +191,7 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
   const [documents, setDocuments] = useState<Document[]>([])
   const [currentDocument, setCurrentDocument] = useState<Document | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [accessError, setAccessError] = useState<string | null>(null)
   const [shareSettings, setShareSettings] = useState<ShareSettings>({
     isPublic: false,
     allowComments: true,
@@ -291,8 +319,12 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
     try {
       const response = await authorizedFetch(`${API_BASE_URL}/documents/${id}`)
       if (!response.ok) {
+        if (response.status === 403) {
+          setAccessError("Bạn không có quyền truy cập tài liệu này.")
+        }
         throw new Error("Failed to fetch document")
       }
+      setAccessError(null)
       const fetched = mapApiDocument(await response.json())
       setDocuments((prev) => {
         const exists = prev.some((doc) => doc.id === fetched.id)
@@ -391,47 +423,90 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
     }).catch((error) => console.error("Failed to update share setting", error))
   }
 
-  const addCollaborator = (documentId: string, email: string, role: "viewer" | "commenter" | "editor") => {
-    // In a real app, this would send an invitation email
-    const newUserId = `user-${Date.now()}`
-    setDocuments((prev) =>
-      prev.map((doc) =>
-        doc.id === documentId
-          ? {
-              ...doc,
-              permissions: [...doc.permissions, { userId: newUserId, role }],
-              isShared: true,
-            }
-          : doc,
-      ),
-    )
-  }
+  const addCollaborator = useCallback(
+    async (documentId: string, email: string, role: "viewer" | "commenter" | "editor") => {
+      if (!accessToken) throw new Error("Missing access token")
+      const resp = await authorizedFetch(`${API_BASE_URL}/acl/documents/${documentId}/collaborators`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, role }),
+      })
+      if (!resp.ok) {
+        const message = await resp.text()
+        throw new Error(message || "Failed to add collaborator")
+      }
+      const data = (await resp.json()) as { userId: string; role: string; email?: string; name?: string; avatar?: string }
+      setDocuments((prev) =>
+        prev.map((doc) =>
+          doc.id === documentId
+            ? {
+                ...doc,
+                permissions: [
+                  ...doc.permissions.filter((p) => p.userId !== data.userId),
+                  {
+                    userId: data.userId,
+                    role: data.role as any,
+                    email: data.email,
+                    name: data.name,
+                    avatar: data.avatar,
+                  },
+                ],
+                isShared: true,
+              }
+            : doc,
+        ),
+      )
+    },
+    [accessToken, authorizedFetch],
+  )
 
-  const removeCollaborator = (documentId: string, userId: string) => {
-    setDocuments((prev) =>
-      prev.map((doc) =>
-        doc.id === documentId
-          ? {
-              ...doc,
-              permissions: doc.permissions.filter((p) => p.userId !== userId),
-            }
-          : doc,
-      ),
-    )
-  }
+  const removeCollaborator = useCallback(
+    async (documentId: string, userId: string) => {
+      if (!accessToken) return
+      const resp = await authorizedFetch(`${API_BASE_URL}/acl/documents/${documentId}/collaborators/${userId}`, {
+        method: "DELETE",
+      })
+      if (!resp.ok) {
+        throw new Error("Failed to remove collaborator")
+      }
+      setDocuments((prev) =>
+        prev.map((doc) =>
+          doc.id === documentId
+            ? {
+                ...doc,
+                permissions: doc.permissions.filter((p) => p.userId !== userId),
+              }
+            : doc,
+        ),
+      )
+    },
+    [accessToken, authorizedFetch],
+  )
 
-  const updateCollaboratorRole = (documentId: string, userId: string, role: "viewer" | "commenter" | "editor") => {
-    setDocuments((prev) =>
-      prev.map((doc) =>
-        doc.id === documentId
-          ? {
-              ...doc,
-              permissions: doc.permissions.map((p) => (p.userId === userId ? { ...p, role } : p)),
-            }
-          : doc,
-      ),
-    )
-  }
+  const updateCollaboratorRole = useCallback(
+    async (documentId: string, userId: string, role: "viewer" | "commenter" | "editor") => {
+      if (!accessToken) return
+      const resp = await authorizedFetch(`${API_BASE_URL}/acl/documents/${documentId}/collaborators/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      })
+      if (!resp.ok) {
+        throw new Error("Failed to update collaborator role")
+      }
+      setDocuments((prev) =>
+        prev.map((doc) =>
+          doc.id === documentId
+            ? {
+                ...doc,
+                permissions: doc.permissions.map((p) => (p.userId === userId ? { ...p, role } : p)),
+              }
+            : doc,
+        ),
+      )
+    },
+    [accessToken, authorizedFetch],
+  )
 
   const getRecentDocuments = () => {
     return documents
@@ -497,6 +572,8 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
         currentDocument,
         shareSettings,
         searchQuery,
+        accessError,
+        clearAccessError: () => setAccessError(null),
         setSearchQuery,
         createDocument,
         selectDocument,

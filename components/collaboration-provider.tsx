@@ -9,6 +9,7 @@ export interface User {
   name: string
   avatar: string
   color: string
+  email?: string
   cursor?: {
     blockId: string
     position: number
@@ -92,6 +93,7 @@ export function CollaborationProvider({ children }: CollaborationProviderProps) 
         name: authUser.name,
         avatar: authUser.avatar,
         color: authUser.color ?? pickColorForId(authUser.id),
+        email: authUser.email ?? undefined,
       }
     }
     return guestUser

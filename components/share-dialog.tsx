@@ -29,12 +29,14 @@ export function ShareDialog({ documentId, children }: ShareDialogProps) {
   const [inviteRole, setInviteRole] = useState<"viewer" | "commenter" | "editor">("commenter")
   const [localSettings, setLocalSettings] = useState(shareSettings)
   const [publicLink] = useState(`https://docwave.app/doc/${documentId}`)
+  const [inviteError, setInviteError] = useState<string | null>(null)
 
   const handleInvite = () => {
-    if (inviteEmail.trim()) {
-      addCollaborator(documentId, inviteEmail, inviteRole)
-      setInviteEmail("")
-    }
+    if (!inviteEmail.trim()) return
+    setInviteError(null)
+    addCollaborator(currentDocument?.id ?? documentId, inviteEmail, inviteRole)
+      .then(() => setInviteEmail(""))
+      .catch((err) => setInviteError(err.message || "Không thể mời người dùng"))
   }
 
   const handleSaveSettings = () => {
@@ -48,6 +50,10 @@ export function ShareDialog({ documentId, children }: ShareDialogProps) {
   }
 
   const collaborators = currentDocument?.permissions.filter((p) => p.role !== "owner") || []
+
+  const formatName = (perm: (typeof collaborators)[number]) =>
+    perm.name || perm.email || perm.userId || "Unknown"
+  const formatEmail = (perm: (typeof collaborators)[number]) => perm.email || "No email"
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -78,14 +84,15 @@ export function ShareDialog({ documentId, children }: ShareDialogProps) {
 
           <TabsContent value="people" className="space-y-4">
             {/* Invite people */}
-            <div className="space-y-3">
-              <Label>Invite people</Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Enter email address"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  className="flex-1"
+              <div className="space-y-3">
+                <Label>Invite people</Label>
+                {inviteError && <p className="text-sm text-red-500">{inviteError}</p>}
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Enter email address"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    className="flex-1"
                 />
                 <Select
                   value={inviteRole}
@@ -131,12 +138,12 @@ export function ShareDialog({ documentId, children }: ShareDialogProps) {
                   <div key={permission.userId} className="flex items-center justify-between p-3 border rounded-lg">
                     <div className="flex items-center gap-3">
                       <Avatar className="h-8 w-8">
-                        <AvatarImage src="/placeholder.svg" />
-                        <AvatarFallback>U</AvatarFallback>
+                        <AvatarImage src={permission.avatar || "/placeholder.svg"} />
+                        <AvatarFallback>{formatName(permission).charAt(0).toUpperCase()}</AvatarFallback>
                       </Avatar>
                       <div>
-                        <div className="font-medium">User {permission.userId}</div>
-                        <div className="text-sm text-muted-foreground">user{permission.userId}@example.com</div>
+                        <div className="font-medium">{formatName(permission)}</div>
+                        <div className="text-sm text-muted-foreground">{formatEmail(permission)}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

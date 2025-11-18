@@ -68,7 +68,14 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
   const { currentUser } = useCollaboration()
   // Comments are temporarily disabled
   const { suggestionMode, toggleSuggestionMode } = useComments()
-  const { currentDocument, updateDocument, createDocument, selectDocument } = useDocuments()
+  const {
+    currentDocument,
+    updateDocument,
+    createDocument,
+    selectDocument,
+    accessError,
+    clearAccessError,
+  } = useDocuments()
   const [documentTitle, setDocumentTitle] = useState(currentDocument?.title || "Untitled Document")
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
@@ -115,6 +122,7 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
 
   useEffect(() => {
     selectDocument(docId ?? null)
+    clearAccessError()
   }, [docId, selectDocument])
 
   useEffect(() => {
@@ -211,6 +219,18 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
 
   const statusDisplay = getSyncStatusDisplay()
 
+  if (accessError) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background text-muted-foreground px-6 text-center">
+        <div className="space-y-3 max-w-md">
+          <div className="text-lg font-semibold text-foreground">Không thể mở tài liệu</div>
+          <div>{accessError}</div>
+          <Button onClick={() => router.push("/documents")}>Quay lại Documents</Button>
+        </div>
+      </div>
+    )
+  }
+
   if (!currentDocument) {
     return (
       <div className="h-screen flex items-center justify-center bg-background text-muted-foreground">
@@ -218,6 +238,9 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
       </div>
     )
   }
+
+  const canWrite =
+    currentDocument?.currentRole === "owner" || currentDocument?.currentRole === "editor"
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -398,7 +421,11 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
                 </Button>
                 <div className="hidden sm:flex -space-x-2">
                   {visibleUsers.map((user) => (
-                    <Avatar key={user.id} className="h-6 w-6 md:h-8 md:w-8 border-2 border-background">
+                    <Avatar
+                      key={user.id}
+                      className="h-6 w-6 md:h-8 md:w-8 border-2 border-background"
+                      title={user.email ?? user.name}
+                    >
                       <AvatarImage src={user.avatar || "/placeholder.svg"} />
                       <AvatarFallback style={{ backgroundColor: user.color, color: "white" }}>
                         {user.name.charAt(0)}
@@ -497,16 +524,17 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
         <main className="flex-1 bg-card overflow-auto">
           <div className="max-w-4xl mx-auto p-4 md:p-8 pb-20 md:pb-8">
             <div className="bg-background min-h-[800px] rounded-lg shadow-sm border border-border p-4 md:p-8 touch-manipulation">
-          {currentDocument && (
-            <TiptapEditor
-              docId={currentDocument.id}
-              initialContent={resolvedInitialContent}
-              onSave={handleEditorSave}
-              onStatusChange={handleStatusChange}
-              onEditorReady={setEditorInstance}
-              onPresenceChange={setPresenceUsers}
-            />
-          )}
+              {currentDocument && (
+                <TiptapEditor
+                  docId={currentDocument.id}
+                  initialContent={resolvedInitialContent}
+                  onSave={handleEditorSave}
+                  onStatusChange={handleStatusChange}
+                  onEditorReady={setEditorInstance}
+                  onPresenceChange={setPresenceUsers}
+                  canWrite={!!canWrite}
+                />
+              )}
             </div>
           </div>
         </main>

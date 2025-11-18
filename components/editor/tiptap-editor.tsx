@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button"
 import { Bold, Italic, Underline as UnderlineIcon, Code, Link2 } from "lucide-react"
 import type { Editor } from "@tiptap/react"
 import { useCollaboration } from "@/components/collaboration-provider"
+import { useAuth } from "@/components/auth-provider"
 import type { Doc } from "yjs"
 
 const Y_WEBSOCKET_URL = process.env.NEXT_PUBLIC_YWS_URL ?? "ws://localhost:3001"
@@ -42,7 +43,8 @@ type Props = {
   onSave?: (json: unknown) => void
   onStatusChange?: (status: "saved" | "saving" | "offline") => void
   onEditorReady?: (editor: Editor | null) => void
-  onPresenceChange?: (users: Array<{ id: string; name: string; avatar?: string; color?: string }>) => void
+  onPresenceChange?: (users: Array<{ id: string; name: string; avatar?: string; color?: string; email?: string }>) => void
+  canWrite?: boolean
   className?: string
 }
 
@@ -53,9 +55,11 @@ export function TiptapEditor({
   onStatusChange,
   onEditorReady,
   onPresenceChange,
+  canWrite = true,
   className
 }: Props) {
   const { currentUser: user } = useCollaboration()
+  const { accessToken } = useAuth()
   const [collabState, setCollabState] = useState<{
     ydoc: Doc
     provider: WebsocketProvider
@@ -82,7 +86,9 @@ export function TiptapEditor({
       }
 
       ydoc = new Y.Doc()
-      provider = new WebsocketProvider(Y_WEBSOCKET_URL, docId, ydoc)
+      provider = new WebsocketProvider(Y_WEBSOCKET_URL, docId, ydoc, {
+        params: { token: accessToken ?? undefined },
+      })
 
       const undoManager = new Y.UndoManager(ydoc.getXmlFragment(COLLAB_FRAGMENT))
 
@@ -97,6 +103,7 @@ export function TiptapEditor({
             name: u.name ?? "Unknown",
             avatar: u.avatar,
             color: u.color,
+            email: u.email,
           }))
         onPresenceChange(users)
       }
@@ -130,7 +137,7 @@ export function TiptapEditor({
       setCollabState(null)
       onPresenceChange?.([])
     }
-  }, [docId, user, onStatusChange, onPresenceChange])
+  }, [docId, user, accessToken, onStatusChange, onPresenceChange])
 
   const editorOptions = useMemo(() => {
     const undoExtension = collabState?.undoManager
@@ -165,8 +172,9 @@ export function TiptapEditor({
 
     return {
       content: initialContent,
+      editable: !!canWrite,
       onUpdate: ({ editor }: { editor: Editor }) => {
-        if (onSave) {
+        if (onSave && canWrite) {
           onStatusChange?.("saving")
           if (saveTimeout.current) {
             clearTimeout(saveTimeout.current)
