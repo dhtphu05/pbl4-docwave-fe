@@ -1,18 +1,22 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useDocuments } from "@/components/document-provider"
 import { FileText, Search, Star, Share2, MoreHorizontal, Plus, ArrowLeft } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 
 export default function DocumentsPage() {
-  const { getRecentDocuments, getStarredDocuments, getSharedDocuments, getTrashedDocuments } = useDocuments()
+  const { getRecentDocuments, getStarredDocuments, getSharedDocuments, getTrashedDocuments, createDocument } =
+    useDocuments()
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<"recent" | "starred" | "shared" | "trash">("recent")
   const [searchQuery, setSearchQuery] = useState("")
+  const [isCreating, setIsCreating] = useState(false)
 
   const getDocuments = () => {
     switch (activeTab) {
@@ -37,6 +41,19 @@ export default function DocumentsPage() {
     }).format(date)
   }
 
+  const handleNewDocument = useCallback(async () => {
+    if (isCreating) return
+    setIsCreating(true)
+    try {
+      const doc = await createDocument("Untitled Document")
+      if (doc?.id) {
+        router.push(`/editor?id=${doc.id}`)
+      }
+    } finally {
+      setIsCreating(false)
+    }
+  }, [createDocument, isCreating, router])
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -54,12 +71,10 @@ export default function DocumentsPage() {
               <span className="font-bold text-lg text-foreground">DocWave</span>
             </div>
           </div>
-          <Link href="/editor">
-            <Button className="bg-primary hover:bg-primary/90">
-              <Plus className="h-4 w-4 mr-2" />
-              New Document
-            </Button>
-          </Link>
+          <Button className="bg-primary hover:bg-primary/90" onClick={handleNewDocument} disabled={isCreating}>
+            <Plus className="h-4 w-4 mr-2" />
+            {isCreating ? "Creating..." : "New Document"}
+          </Button>
         </div>
       </header>
 

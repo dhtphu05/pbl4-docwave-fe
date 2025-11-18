@@ -116,6 +116,9 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
 
   useEffect(() => {
     if (!currentDocument) return
+    // If URL already has an id (user clicked a specific doc), don't override it.
+    if (currentDocIdInUrl) return
+    // Only push id when missing to avoid jumping between previous/current doc.
     if (currentDocIdInUrl === currentDocument.id) return
     const url = `/editor?id=${currentDocument.id}`
     router.replace(url)
