@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { DocumentProvider } from "@/components/document-provider"
 import { CollaborationProvider } from "@/components/collaboration-provider"
 import { CommentsProvider } from "@/components/comments-provider"
+import { AuthProvider } from "@/components/auth-provider"
 
 interface AppProvidersProps {
   children: ReactNode
@@ -13,11 +14,13 @@ interface AppProvidersProps {
 export function AppProviders({ children }: AppProvidersProps) {
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-      <DocumentProvider>
-        <CollaborationProvider>
-          <CommentsProvider>{children}</CommentsProvider>
-        </CollaborationProvider>
-      </DocumentProvider>
+      <AuthProvider>
+        <DocumentProvider>
+          <CollaborationProvider>
+            <CommentsProvider>{children}</CommentsProvider>
+          </CollaborationProvider>
+        </DocumentProvider>
+      </AuthProvider>
     </ThemeProvider>
   )
 }

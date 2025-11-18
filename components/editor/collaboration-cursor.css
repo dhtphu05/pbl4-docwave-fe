@@ -1,0 +1,27 @@
+.collaboration-cursor__caret {
+  position: relative;
+  display: inline-flex;
+  align-items: flex-end;
+  width: 0;
+  height: 1.2em;
+  border-left: 2px solid;
+  margin-left: -1px;
+  margin-right: -1px;
+  pointer-events: none;
+}
+
+.collaboration-cursor__label {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translate(-50%, -0.25rem);
+  font-size: 0.65rem;
+  line-height: 1;
+  font-weight: 600;
+  color: #fff;
+  padding: 0.15rem 0.45rem;
+  border-radius: 9999px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
