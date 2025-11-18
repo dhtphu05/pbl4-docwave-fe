@@ -10,7 +10,6 @@ import { Badge } from "@/components/ui/badge"
 import { useCollaboration } from "@/components/collaboration-provider"
 import { useComments } from "@/components/comments-provider"
 import { useDocuments } from "@/components/document-provider"
-import { CommentsPanel } from "@/components/comments-panel"
 import { ShareDialog } from "@/components/share-dialog"
 import { SearchDialog } from "@/components/search-dialog"
 import { TemplateGallery } from "@/components/template-gallery"
@@ -67,6 +66,7 @@ interface DocWaveEditorContentProps {
 
 function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
   const { onlineUsers } = useCollaboration()
+  // Comments are temporarily disabled
   const { suggestionMode, toggleSuggestionMode } = useComments()
   const { currentDocument, updateDocument, createDocument, selectDocument } = useDocuments()
   const [documentTitle, setDocumentTitle] = useState(currentDocument?.title || "Untitled Document")
@@ -498,7 +498,10 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
         {/* Right Panel (hidden on mobile) */}
         {rightPanelOpen && !isMobile && (
           <aside className="w-80 bg-popover border-l border-border flex flex-col">
-            <CommentsPanel />
+            <div className="p-4 border-b border-border">
+              <h3 className="font-medium text-popover-foreground">Comments</h3>
+              <p className="text-sm text-muted-foreground">Bình luận sẽ sớm khả dụng.</p>
+            </div>
 
             <div className="p-4 border-t border-border">
               <h3 className="font-medium text-popover-foreground mb-3">Document Properties</h3>
