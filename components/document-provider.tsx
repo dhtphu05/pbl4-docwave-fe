@@ -45,6 +45,7 @@ interface DocumentContextType {
   clearAccessError: () => void
   setSearchQuery: (query: string) => void
   selectDocument: (id: string | null) => void
+  refreshDocument: (id: string) => Promise<Document | null>
   createDocument: (title: string) => Promise<Document>
   updateDocument: (id: string, updates: Partial<Document>) => Promise<Document | null>
   deleteDocument: (id: string) => Promise<Document | null>
@@ -340,6 +341,12 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
       return null
     }
   }, [accessToken, authorizedFetch])
+  const refreshDocument = useCallback(
+    async (id: string) => {
+      return fetchDocumentById(id)
+    },
+    [fetchDocumentById],
+  )
 
   const updateDocument = useCallback(
     async (id: string, updates: Partial<Document>): Promise<Document | null> => {
@@ -577,6 +584,7 @@ export function DocumentProvider({ children }: DocumentProviderProps) {
         setSearchQuery,
         createDocument,
         selectDocument,
+        refreshDocument,
         updateDocument,
         deleteDocument,
         restoreDocument,

@@ -73,6 +73,7 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
     updateDocument,
     createDocument,
     selectDocument,
+    refreshDocument,
     accessError,
     clearAccessError,
   } = useDocuments()
@@ -124,6 +125,15 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
     selectDocument(docId ?? null)
     clearAccessError()
   }, [docId, selectDocument])
+
+  // Poll document metadata to catch role changes (e.g., demote editor -> viewer)
+  useEffect(() => {
+    if (!currentDocument?.id) return
+    const interval = setInterval(() => {
+      refreshDocument(currentDocument.id).catch(() => {})
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [currentDocument?.id, refreshDocument])
 
   useEffect(() => {
     if (!currentDocument) return
@@ -522,7 +532,13 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
 
         {/* Main Canvas */}
         <main className="flex-1 bg-card overflow-auto">
-          <div className="max-w-4xl mx-auto p-4 md:p-8 pb-20 md:pb-8">
+          <div className="max-w-4xl mx-auto p-4 md:p-8 pb-20 md:pb-8 space-y-3">
+            {!canWrite && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground px-2 py-2 rounded-md border bg-muted/50">
+                <div className="h-2 w-2 rounded-full bg-orange-400 animate-pulse" />
+                Tài liệu ở chế độ chỉ xem. Bạn không có quyền chỉnh sửa.
+              </div>
+            )}
             <div className="bg-background min-h-[800px] rounded-lg shadow-sm border border-border p-4 md:p-8 touch-manipulation">
               {currentDocument && (
                 <TiptapEditor

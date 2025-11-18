@@ -247,7 +247,7 @@ export function TiptapEditor({
       },
       immediatelyRender: false,
     }
-  }, [collabState, user, initialContent, onSave, onStatusChange])
+  }, [collabState, user, initialContent, onSave, onStatusChange, canWrite])
 
   const editor = useEditor(editorOptions, [docId, collabState?.ydoc])
 
