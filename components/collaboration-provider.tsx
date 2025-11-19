@@ -4,11 +4,12 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { useAuth } from "@/components/auth-provider"
 import { GUEST_COLORS, pickColorForId } from "@/lib/auth"
 
-interface User {
+export interface User {
   id: string
   name: string
   avatar: string
   color: string
+  email?: string
   cursor?: {
     blockId: string
     position: number
@@ -92,6 +93,7 @@ export function CollaborationProvider({ children }: CollaborationProviderProps) 
         name: authUser.name,
         avatar: authUser.avatar,
         color: authUser.color ?? pickColorForId(authUser.id),
+        email: authUser.email ?? undefined,
       }
     }
     return guestUser

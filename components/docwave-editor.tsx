@@ -10,7 +10,6 @@ import { Badge } from "@/components/ui/badge"
 import { useCollaboration } from "@/components/collaboration-provider"
 import { useComments } from "@/components/comments-provider"
 import { useDocuments } from "@/components/document-provider"
-import { CommentsPanel } from "@/components/comments-panel"
 import { ShareDialog } from "@/components/share-dialog"
 import { SearchDialog } from "@/components/search-dialog"
 import { TemplateGallery } from "@/components/template-gallery"
@@ -66,9 +65,18 @@ interface DocWaveEditorContentProps {
 }
 
 function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
-  const { onlineUsers } = useCollaboration()
+  const { currentUser } = useCollaboration()
+  // Comments are temporarily disabled
   const { suggestionMode, toggleSuggestionMode } = useComments()
-  const { currentDocument, updateDocument, createDocument, selectDocument } = useDocuments()
+  const {
+    currentDocument,
+    updateDocument,
+    createDocument,
+    selectDocument,
+    refreshDocument,
+    accessError,
+    clearAccessError,
+  } = useDocuments()
   const [documentTitle, setDocumentTitle] = useState(currentDocument?.title || "Untitled Document")
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
@@ -77,6 +85,9 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [editorInstance, setEditorInstance] = useState<Editor | null>(null)
+  const [presenceUsers, setPresenceUsers] = useState<
+    Array<{ id: string; name: string; avatar?: string; color?: string }>
+  >([])
   const router = useRouter()
   const searchParams = useSearchParams()
   const currentDocIdInUrl = searchParams?.get("id") ?? undefined
@@ -112,10 +123,23 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
 
   useEffect(() => {
     selectDocument(docId ?? null)
+    clearAccessError()
   }, [docId, selectDocument])
+
+  // Poll document metadata to catch role changes (e.g., demote editor -> viewer)
+  useEffect(() => {
+    if (!currentDocument?.id) return
+    const interval = setInterval(() => {
+      refreshDocument(currentDocument.id).catch(() => {})
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [currentDocument?.id, refreshDocument])
 
   useEffect(() => {
     if (!currentDocument) return
+    // If URL already has an id (user clicked a specific doc), don't override it.
+    if (currentDocIdInUrl) return
+    // Only push id when missing to avoid jumping between previous/current doc.
     if (currentDocIdInUrl === currentDocument.id) return
     const url = `/editor?id=${currentDocument.id}`
     router.replace(url)
@@ -205,6 +229,18 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
 
   const statusDisplay = getSyncStatusDisplay()
 
+  if (accessError) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background text-muted-foreground px-6 text-center">
+        <div className="space-y-3 max-w-md">
+          <div className="text-lg font-semibold text-foreground">Không thể mở tài liệu</div>
+          <div>{accessError}</div>
+          <Button onClick={() => router.push("/documents")}>Quay lại Documents</Button>
+        </div>
+      </div>
+    )
+  }
+
   if (!currentDocument) {
     return (
       <div className="h-screen flex items-center justify-center bg-background text-muted-foreground">
@@ -213,12 +249,15 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
     )
   }
 
+  const canWrite =
+    currentDocument?.currentRole === "owner" || currentDocument?.currentRole === "editor"
+
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Topbar */}
-      <header className="flex items-center justify-between px-4 py-2 border-b border-border bg-background">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 border-b border-border bg-background">
         {/* Left section */}
-        <div className="flex items-center gap-2 md:gap-4">
+        <div className="flex items-center gap-2 md:gap-4 flex-wrap md:flex-nowrap">
           <MobileDrawer onNewDocument={handleNewDocument} />
 
           <div className="flex items-center gap-2">
@@ -363,39 +402,55 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
         </div>
 
         {/* Right section */}
-        <div className="flex items-center gap-1 md:gap-3">
-          <Button variant="ghost" size="sm" onClick={() => setSearchOpen(true)} className="hidden sm:flex">
-            <Search className="h-4 w-4" />
-          </Button>
-          <ShareDialog documentId={currentDocument?.id || "1"}>
-            <Button variant="default" size="sm" className="bg-primary hover:bg-primary/90">
-              <Share2 className="h-4 w-4 md:mr-2" />
-              <span className="hidden md:inline">Share</span>
-            </Button>
-          </ShareDialog>
-          <Button
-            variant={suggestionMode ? "default" : "ghost"}
-            size="sm"
-            onClick={toggleSuggestionMode}
-            className={cn(suggestionMode ? "bg-primary hover:bg-primary/90" : "", "hidden md:flex")}
-          >
-            <MessageSquare className="h-4 w-4" />
-          </Button>
-          <div className="hidden sm:flex -space-x-2">
-            {onlineUsers.slice(0, isMobile ? 2 : 3).map((user) => (
-              <Avatar key={user.id} className="h-6 w-6 md:h-8 md:w-8 border-2 border-background">
-                <AvatarImage src={user.avatar || "/placeholder.svg"} />
-                <AvatarFallback style={{ backgroundColor: user.color, color: "white" }}>
-                  {user.name.charAt(0)}
-                </AvatarFallback>
-              </Avatar>
-            ))}
-            {onlineUsers.length > (isMobile ? 2 : 3) && (
-              <div className="h-6 w-6 md:h-8 md:w-8 rounded-full bg-muted border-2 border-background flex items-center justify-center text-xs font-medium">
-                +{onlineUsers.length - (isMobile ? 2 : 3)}
-              </div>
-            )}
-          </div>
+        <div className="flex items-center gap-2 md:gap-3 flex-wrap md:flex-nowrap justify-end">
+          {(() => {
+            const uniques = [currentUser, ...presenceUsers].filter(
+              (u, idx, arr) => u && u.id && arr.findIndex((x) => x?.id === u.id) === idx,
+            )
+            const capacity = isMobile ? 2 : 3
+            const visibleUsers = uniques.slice(0, capacity)
+            const remaining = Math.max(uniques.length - capacity, 0)
+            return (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => setSearchOpen(true)} className="hidden sm:flex">
+                  <Search className="h-4 w-4" />
+                </Button>
+                <ShareDialog documentId={currentDocument?.id || "1"}>
+                  <Button variant="default" size="sm" className="bg-primary hover:bg-primary/90">
+                    <Share2 className="h-4 w-4 md:mr-2" />
+                    <span className="hidden md:inline">Share</span>
+                  </Button>
+                </ShareDialog>
+                <Button
+                  variant={suggestionMode ? "default" : "ghost"}
+                  size="sm"
+                  onClick={toggleSuggestionMode}
+                  className={cn(suggestionMode ? "bg-primary hover:bg-primary/90" : "", "hidden md:flex")}
+                >
+                  <MessageSquare className="h-4 w-4" />
+                </Button>
+                <div className="hidden sm:flex -space-x-2">
+                  {visibleUsers.map((user) => (
+                    <Avatar
+                      key={user.id}
+                      className="h-6 w-6 md:h-8 md:w-8 border-2 border-background"
+                      title={user.email ?? user.name}
+                    >
+                      <AvatarImage src={user.avatar || "/placeholder.svg"} />
+                      <AvatarFallback style={{ backgroundColor: user.color, color: "white" }}>
+                        {user.name.charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
+                  ))}
+                  {remaining > 0 && (
+                    <div className="h-6 w-6 md:h-8 md:w-8 rounded-full bg-muted border-2 border-background flex items-center justify-center text-xs font-medium">
+                      +{remaining}
+                    </div>
+                  )}
+                </div>
+              </>
+            )
+          })()}
           <Badge variant="secondary" className={cn("text-xs hidden sm:flex", statusDisplay.className)}>
             {statusDisplay.text}
           </Badge>
@@ -477,7 +532,13 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
 
         {/* Main Canvas */}
         <main className="flex-1 bg-card overflow-auto">
-          <div className="max-w-4xl mx-auto p-4 md:p-8 pb-20 md:pb-8">
+          <div className="max-w-4xl mx-auto p-4 md:p-8 pb-20 md:pb-8 space-y-3">
+            {!canWrite && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground px-2 py-2 rounded-md border bg-muted/50">
+                <div className="h-2 w-2 rounded-full bg-orange-400 animate-pulse" />
+                Tài liệu ở chế độ chỉ xem. Bạn không có quyền chỉnh sửa.
+              </div>
+            )}
             <div className="bg-background min-h-[800px] rounded-lg shadow-sm border border-border p-4 md:p-8 touch-manipulation">
               {currentDocument && (
                 <TiptapEditor
@@ -486,6 +547,8 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
                   onSave={handleEditorSave}
                   onStatusChange={handleStatusChange}
                   onEditorReady={setEditorInstance}
+                  onPresenceChange={setPresenceUsers}
+                  canWrite={!!canWrite}
                 />
               )}
             </div>
@@ -495,7 +558,10 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
         {/* Right Panel (hidden on mobile) */}
         {rightPanelOpen && !isMobile && (
           <aside className="w-80 bg-popover border-l border-border flex flex-col">
-            <CommentsPanel />
+            <div className="p-4 border-b border-border">
+              <h3 className="font-medium text-popover-foreground">Comments</h3>
+              <p className="text-sm text-muted-foreground">Bình luận sẽ sớm khả dụng.</p>
+            </div>
 
             <div className="p-4 border-t border-border">
               <h3 className="font-medium text-popover-foreground mb-3">Document Properties</h3>
