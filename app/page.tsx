@@ -1,51 +1,33 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
+import { Header } from "@/components/header"
 import { FileText, ArrowRight, Users, MessageSquare, Share2, Zap } from "lucide-react"
 import Link from "next/link"
 
 export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-muted">
-      {/* Navigation */}
-      <nav className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FileText className="h-6 w-6 text-primary" />
-            <span className="font-bold text-lg text-foreground">DocWave</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <Link href="/documents">
-              <Button variant="ghost">Documents</Button>
-            </Link>
-            <Link href="/editor">
-              <Button className="bg-primary hover:bg-primary/90">
-                Get Started
-                <ArrowRight className="h-4 w-4 ml-2" />
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </nav>
+      <Header />
 
       {/* Hero Section */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center space-y-6">
           <h1 className="text-5xl sm:text-6xl font-bold text-foreground text-balance">
-            Collaborative Rich-Text Editor
+            Trình soạn thảo văn bản cộng tác
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto text-balance">
-            Create, edit, and collaborate on documents in real-time with your team. Built with modern web technologies.
+            Tạo, chỉnh sửa và cộng tác trên tài liệu trong thời gian thực với nhóm của bạn. Được xây dựng bằng công nghệ web hiện đại.
           </p>
           <div className="flex gap-4 justify-center pt-4">
             <Link href="/editor">
               <Button size="lg" className="bg-primary hover:bg-primary/90">
-                Start Editing
+                Bắt đầu soạn thảo
               </Button>
             </Link>
             <Link href="/documents">
               <Button size="lg" variant="outline">
-                View Documents
+                Xem tài liệu
               </Button>
             </Link>
           </div>

@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { pickColorForId } from "@/lib/auth"
+import { toast } from "@/hooks/use-toast"
 
 export type AuthUser = {
   id: string
@@ -108,6 +109,12 @@ const InnerAuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(mappedUser)
       setTokens(nextTokens)
       persistSession({ user: mappedUser, accessToken: nextTokens.accessToken, refreshToken: nextTokens.refreshToken })
+      
+      // Show success toast
+      toast({
+        title: "Đăng nhập thành công!",
+        description: `Chào mừng ${mappedUser.name} đã quay lại DocWave.`,
+      })
     },
     [persistSession],
   )
@@ -151,9 +158,18 @@ const InnerAuthProvider = ({ children }: { children: ReactNode }) => {
   )
 
   const signOut = useCallback(async () => {
+    const currentUserName = user?.name || "người dùng"
+    
     setUser(null)
     setTokens(null)
     persistSession(null)
+    
+    // Show logout toast
+    toast({
+      title: "Đã đăng xuất",
+      description: `Tạm biệt ${currentUserName}! Hẹn gặp lại bạn sớm.`,
+    })
+    
     try {
       await fetch(`${API_BASE_URL}/auth/logout`, {
         method: "POST",
@@ -162,7 +178,7 @@ const InnerAuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (err) {
       console.warn("Failed to notify server about logout", err)
     }
-  }, [persistSession])
+  }, [persistSession, user?.name])
 
   const refreshSession = useCallback(async () => {
     if (!tokens?.refreshToken) return

@@ -73,7 +73,6 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
     updateDocument,
     createDocument,
     selectDocument,
-    refreshDocument,
     accessError,
     clearAccessError,
   } = useDocuments()
@@ -124,16 +123,7 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
   useEffect(() => {
     selectDocument(docId ?? null)
     clearAccessError()
-  }, [docId, selectDocument])
-
-  // Poll document metadata to catch role changes (e.g., demote editor -> viewer)
-  useEffect(() => {
-    if (!currentDocument?.id) return
-    const interval = setInterval(() => {
-      refreshDocument(currentDocument.id).catch(() => {})
-    }, 5000)
-    return () => clearInterval(interval)
-  }, [currentDocument?.id, refreshDocument])
+  }, [docId, selectDocument, clearAccessError])
 
   useEffect(() => {
     if (!currentDocument) return
@@ -207,7 +197,7 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
 
   const editor = editorInstance
 
-  const getSyncStatusDisplay = () => {
+  const statusDisplay = useMemo(() => {
     switch (syncStatus) {
       case "saved":
         return { text: "✓ Saved", className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" }
@@ -225,28 +215,50 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
       default:
         return { text: "✓ Saved", className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" }
     }
-  }
+  }, [syncStatus])
 
-  const statusDisplay = getSyncStatusDisplay()
+  const handleBackToDocuments = useCallback(() => {
+    clearAccessError()
+    router.push("/documents")
+  }, [router, clearAccessError])
 
-  if (accessError) {
+  // Memoize error screen to prevent re-render flickering
+  const accessErrorScreen = useMemo(() => {
+    if (!accessError) return null
+    
     return (
-      <div className="h-screen flex items-center justify-center bg-background text-muted-foreground px-6 text-center">
-        <div className="space-y-3 max-w-md">
-          <div className="text-lg font-semibold text-foreground">Không thể mở tài liệu</div>
-          <div>{accessError}</div>
-          <Button onClick={() => router.push("/documents")}>Quay lại Documents</Button>
+      <div className="h-screen flex items-center justify-center bg-background text-muted-foreground px-6 text-center error-container stable-layout">
+        <div className="space-y-4 max-w-md error-content">
+          <div className="space-y-2">
+            <div className="text-lg font-semibold text-foreground">Không thể mở tài liệu</div>
+            <div className="text-sm leading-relaxed text-muted-foreground">{accessError}</div>
+          </div>
+          <Button 
+            onClick={handleBackToDocuments}
+            className="transition-smooth hover:scale-105 active:scale-95"
+          >
+            Quay lại Documents
+          </Button>
         </div>
       </div>
     )
+  }, [accessError, handleBackToDocuments])
+
+  if (accessError) {
+    return accessErrorScreen
   }
 
-  if (!currentDocument) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-background text-muted-foreground">
+  // Memoize no document screen to prevent re-render flickering
+  const noDocumentScreen = useMemo(() => (
+    <div className="h-screen flex items-center justify-center bg-background text-muted-foreground stable-layout">
+      <div className="fade-in">
         No document selected
       </div>
-    )
+    </div>
+  ), [])
+
+  if (!currentDocument) {
+    return noDocumentScreen
   }
 
   const canWrite =
@@ -434,7 +446,7 @@ function DocWaveEditorContent({ docId }: DocWaveEditorContentProps) {
                     <Avatar
                       key={user.id}
                       className="h-6 w-6 md:h-8 md:w-8 border-2 border-background"
-                      title={user.email ?? user.name}
+                      title={user.name}
                     >
                       <AvatarImage src={user.avatar || "/placeholder.svg"} />
                       <AvatarFallback style={{ backgroundColor: user.color, color: "white" }}>

@@ -57,14 +57,21 @@ export function LoginScreen() {
               {user.email && <p className="text-sm text-muted-foreground">{user.email}</p>}
             </div>
           </div>
-          <Button className="w-full" asChild>
-            <Link href="/documents">Continue to documents</Link>
+          <Button className="w-full h-11" asChild>
+            <Link href="/documents">Tiếp tục đến tài liệu</Link>
           </Button>
-          <Button variant="ghost" className="w-full" onClick={signOut} disabled={isLoading}>
-            Sign out
+          <Button variant="outline" className="w-full h-11" onClick={signOut} disabled={isLoading}>
+            {isLoading ? (
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Đang đăng xuất...</span>
+              </div>
+            ) : (
+              "Đăng xuất"
+            )}
           </Button>
           <Button variant="link" asChild className="w-full">
-            <Link href="/">Back to landing page</Link>
+            <Link href="/">Quay lại trang chủ</Link>
           </Button>
         </div>
       </div>
@@ -79,43 +86,50 @@ export function LoginScreen() {
             <Shield className="h-7 w-7" />
           </div>
           <h1 className="text-3xl font-bold text-foreground">
-            {mode === "login" ? "Sign in to DocWave" : "Create your DocWave account"}
+            {mode === "login" ? "Đăng nhập DocWave" : "Tạo tài khoản DocWave"}
           </h1>
-          <p className="text-muted-foreground">Use your email and password to access the workspace.</p>
+          <p className="text-muted-foreground">
+            {mode === "login" 
+              ? "Sử dụng email và mật khẩu để truy cập workspace của bạn."
+              : "Tạo tài khoản mới để bắt đầu sử dụng DocWave."
+            }
+          </p>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           {mode === "register" && (
             <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground" htmlFor="name">
-                Full name
+              <label className="text-sm font-medium text-foreground" htmlFor="name">
+                Họ và tên
               </label>
               <Input
                 id="name"
-                placeholder="Jane Doe"
+                placeholder="Nguyễn Văn A"
                 value={form.name}
                 onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
                 disabled={isLoading}
+                className="h-11"
               />
             </div>
           )}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-muted-foreground" htmlFor="email">
-              Email address
+            <label className="text-sm font-medium text-foreground" htmlFor="email">
+              Địa chỉ email
             </label>
             <Input
               id="email"
               type="email"
-              placeholder="you@example.com"
+              placeholder="your-email@example.com"
               value={form.email}
               onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
               disabled={isLoading}
               required
+              className="h-11"
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium text-muted-foreground" htmlFor="password">
-              Password
+            <label className="text-sm font-medium text-foreground" htmlFor="password">
+              Mật khẩu
             </label>
             <Input
               id="password"
@@ -126,20 +140,37 @@ export function LoginScreen() {
               disabled={isLoading}
               required
               minLength={6}
+              className="h-11"
             />
+            {mode === "register" && (
+              <p className="text-xs text-muted-foreground">Mật khẩu phải có ít nhất 6 ký tự</p>
+            )}
           </div>
-          {(localError || error) && <p className="text-sm text-destructive">{localError ?? error}</p>}
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "login" ? "Sign in" : "Create account"}
+          {(localError || error) && (
+            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+              <p className="text-sm text-destructive">{localError ?? error}</p>
+            </div>
+          )}
+          <Button type="submit" className="w-full h-11" disabled={isLoading}>
+            {isLoading ? (
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>{mode === "login" ? "Đang đăng nhập..." : "Đang tạo tài khoản..."}</span>
+              </div>
+            ) : (
+              mode === "login" ? "Đăng nhập" : "Tạo tài khoản"
+            )}
           </Button>
         </form>
 
-        <Button variant="link" className="w-full" onClick={toggleMode} type="button">
-          {mode === "login" ? "Need an account? Register" : "Already have an account? Sign in"}
-        </Button>
-        <Button variant="link" asChild className="w-full">
-          <Link href="/">Back to landing page</Link>
-        </Button>
+        <div className="space-y-4">
+          <Button variant="ghost" className="w-full" onClick={toggleMode} type="button" disabled={isLoading}>
+            {mode === "login" ? "Chưa có tài khoản? Đăng ký ngay" : "Đã có tài khoản? Đăng nhập"}
+          </Button>
+          <Button variant="link" asChild className="w-full">
+            <Link href="/">Quay lại trang chủ</Link>
+          </Button>
+        </div>
       </div>
     </div>
   )

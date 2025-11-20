@@ -6,6 +6,7 @@ import { DocumentProvider } from "@/components/document-provider"
 import { CollaborationProvider } from "@/components/collaboration-provider"
 import { CommentsProvider } from "@/components/comments-provider"
 import { AuthProvider } from "@/components/auth-provider"
+import { Toaster } from "@/components/ui/toaster"
 
 interface AppProvidersProps {
   children: ReactNode
@@ -17,7 +18,10 @@ export function AppProviders({ children }: AppProvidersProps) {
       <AuthProvider>
         <DocumentProvider>
           <CollaborationProvider>
-            <CommentsProvider>{children}</CommentsProvider>
+            <CommentsProvider>
+              {children}
+              <Toaster />
+            </CommentsProvider>
           </CollaborationProvider>
         </DocumentProvider>
       </AuthProvider>
